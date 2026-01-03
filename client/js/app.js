@@ -118,6 +118,26 @@
       ui.toggleTheme();
     });
 
+    // Rules popup
+    const rulesLink = document.getElementById('rules-link');
+    const rulesPopup = document.getElementById('rules-popup');
+    const rulesClose = document.getElementById('rules-close');
+    
+    rulesLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      rulesPopup.classList.remove('hidden');
+    });
+    
+    rulesClose.addEventListener('click', () => {
+      rulesPopup.classList.add('hidden');
+    });
+    
+    rulesPopup.addEventListener('click', (e) => {
+      if (e.target === rulesPopup) {
+        rulesPopup.classList.add('hidden');
+      }
+    });
+
     // Handle visibility change for reconnection
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && !socketHandler.connected) {
