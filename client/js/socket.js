@@ -67,6 +67,8 @@ class SocketHandler {
     this.socket.on('skipConfirmed', () => this.emit('skipConfirmed'));
     this.socket.on('opponentSwapped', () => this.emit('opponentSwapped'));
     this.socket.on('roundResult', (data) => this.emit('roundResult', data));
+    this.socket.on('continueCountdown', (data) => this.emit('continueCountdown', data));
+    this.socket.on('opponentContinued', () => this.emit('opponentContinued'));
     this.socket.on('gameEnd', (data) => this.emit('gameEnd', data));
     this.socket.on('opponentDisconnected', (data) => this.emit('opponentDisconnected', data));
     this.socket.on('opponentReconnected', () => this.emit('opponentReconnected'));

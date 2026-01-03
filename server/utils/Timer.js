@@ -27,10 +27,13 @@ class Timer {
     
     // Set up tick interval (every second)
     if (this.onTick) {
+      // Send initial tick
+      this.onTick(Math.ceil(this.remaining));
+      
       this.interval = setInterval(() => {
         const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
-        this.remaining = Math.max(0, this.duration - elapsed);
-        this.onTick(this.remaining);
+        const currentRemaining = Math.max(0, Math.ceil(this.duration - elapsed));
+        this.onTick(currentRemaining);
       }, 1000);
     }
   }
@@ -42,7 +45,7 @@ class Timer {
     if (this.paused) return;
     
     const elapsed = (Date.now() - this.startTime) / 1000;
-    this.remaining = Math.max(0, this.remaining - elapsed);
+    this.remaining = Math.max(0, Math.ceil(this.remaining - elapsed));
     this.clear();
     this.paused = true;
   }
@@ -55,6 +58,7 @@ class Timer {
     
     this.paused = false;
     this.startTime = Date.now();
+    this.duration = this.remaining; // Reset duration to remaining for accurate calculation
     
     this.timeout = setTimeout(() => {
       this.clear();
@@ -62,9 +66,12 @@ class Timer {
     }, this.remaining * 1000);
     
     if (this.onTick) {
+      // Send initial tick on resume
+      this.onTick(Math.ceil(this.remaining));
+      
       this.interval = setInterval(() => {
         const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
-        const currentRemaining = Math.max(0, this.remaining - elapsed);
+        const currentRemaining = Math.max(0, Math.ceil(this.duration - elapsed));
         this.onTick(currentRemaining);
       }, 1000);
     }
@@ -85,17 +92,17 @@ class Timer {
   }
 
   /**
-   * Get remaining time in seconds
+   * Get remaining time in seconds (always integer)
    */
   getRemaining() {
-    if (this.paused) return this.remaining;
+    if (this.paused) return Math.ceil(this.remaining);
     
     if (this.startTime) {
       const elapsed = (Date.now() - this.startTime) / 1000;
-      return Math.max(0, this.remaining - elapsed);
+      return Math.max(0, Math.ceil(this.remaining - elapsed));
     }
     
-    return this.remaining;
+    return Math.ceil(this.remaining);
   }
 
   /**

@@ -51,6 +51,8 @@ class GameManager {
       .on('skipConfirmed', () => this.onSkipConfirmed())
       .on('opponentSwapped', () => this.onOpponentSwapped())
       .on('roundResult', (data) => this.onRoundResult(data))
+      .on('continueCountdown', (data) => this.onContinueCountdown(data))
+      .on('opponentContinued', () => this.onOpponentContinued())
       .on('gameEnd', (data) => this.onGameEnd(data))
       .on('opponentDisconnected', (data) => this.onOpponentDisconnected(data))
       .on('opponentReconnected', () => this.onOpponentReconnected())
@@ -100,6 +102,9 @@ class GameManager {
     this.state.opponentName = data.opponentName;
     socketHandler.saveSession(data.lobbyId, data.playerId);
     
+    // Update URL for second player too
+    ui.updateUrlWithRoom(data.lobbyId);
+    
     ui.showToast(`Подключились к игре против ${data.opponentName}`);
   }
 
@@ -121,6 +126,10 @@ class GameManager {
     this.state.opponentName = data.opponentName || this.state.opponentName;
     this.state.sequenceTimer = data.timeLimit;
     this.maxSequenceTime = data.timeLimit;
+    
+    // Clear played cards for new game
+    ui.clearOpponentPlayedCards();
+    ui.clearPlayerPlayedCards();
     
     // Set up sequence screen
     ui.createSequenceSlots(6);
@@ -177,6 +186,9 @@ class GameManager {
     this.state.currentRound = data.round;
     this.maxSwapTime = data.swapTimeLimit;
     
+    // Hide the round result overlay if visible
+    ui.hideRoundResult();
+    
     // Switch to game screen if not already there
     if (ui.currentScreen !== 'game') {
       ui.setupGameScreen(this.state.playerName, this.state.opponentName);
@@ -190,6 +202,7 @@ class GameManager {
     ui.resetBattleCards();
     ui.setActionsEnabled(this.state.swapsRemaining > 0);
     ui.updateSwaps(this.state.swapsRemaining);
+    ui.updateSwapButtonState(this.state.swapsRemaining);
     
     this.state.swapMode = false;
     this.state.selectedCardIndex = null;
@@ -218,33 +231,49 @@ class GameManager {
     this.state.swapMode = true;
     ui.showToast('Выберите карту для обмена');
     
-    // Highlight swappable cards - all remaining cards can be swapped (including current)
-    const cards = document.querySelectorAll('#player-cards .card');
-    cards.forEach((card, index) => {
-      if (!card.classList.contains('used')) {
-        card.classList.add('swap-candidate');
-        card.onclick = () => this.selectCardForSwap(index);
-      }
+    // Get only non-used cards
+    const allCards = document.querySelectorAll('#player-cards .card');
+    const availableCards = Array.from(allCards).filter(card => !card.classList.contains('used'));
+    
+    // Highlight all available cards for first selection
+    availableCards.forEach((card, idx) => {
+      card.classList.add('swap-candidate');
+      card.onclick = () => this.selectCardForSwap(idx, availableCards);
     });
   }
 
   /**
    * Select a card for swapping
    */
-  selectCardForSwap(index) {
+  selectCardForSwap(index, availableCards) {
     if (!this.state.swapMode) return;
-    
-    const cards = document.querySelectorAll('#player-cards .card:not(.used)');
     
     if (this.state.selectedCardIndex === null) {
       // First card selected
       this.state.selectedCardIndex = index;
-      const allCards = document.querySelectorAll('#player-cards .card');
-      allCards[index].classList.add('selected');
+      
+      // Remove highlight from all cards
+      availableCards.forEach(card => {
+        card.classList.remove('swap-candidate');
+        card.onclick = null;
+      });
+      
+      // Add selected class to chosen card
+      availableCards[index].classList.add('selected');
+      
+      // Only highlight adjacent cards that can be swapped
+      if (index > 0) {
+        availableCards[index - 1].classList.add('swap-adjacent');
+        availableCards[index - 1].onclick = () => this.selectCardForSwap(index - 1, availableCards);
+      }
+      if (index < availableCards.length - 1) {
+        availableCards[index + 1].classList.add('swap-adjacent');
+        availableCards[index + 1].onclick = () => this.selectCardForSwap(index + 1, availableCards);
+      }
+      
       ui.showToast('Выберите соседнюю карту');
     } else {
       // Second card selected - try to swap
-      // Positions are relative to remaining cards (index in the sequence array)
       const pos1 = this.state.selectedCardIndex;
       const pos2 = index;
       
@@ -269,7 +298,7 @@ class GameManager {
     
     const cards = document.querySelectorAll('#player-cards .card');
     cards.forEach(card => {
-      card.classList.remove('swap-candidate', 'selected');
+      card.classList.remove('swap-candidate', 'selected', 'swap-adjacent');
       card.onclick = null;
     });
   }
@@ -293,6 +322,7 @@ class GameManager {
     // Render cards - all are remaining so no used cards
     ui.renderPlayerCards(this.state.sequence, 0);
     ui.updateSwaps(this.state.swapsRemaining);
+    ui.updateSwapButtonState(this.state.swapsRemaining);
     ui.setActionsEnabled(false);
     ui.showToast('Свап выполнен!');
   }
@@ -329,8 +359,9 @@ class GameManager {
     this.state.swapsRemaining = data.yourSwapsRemaining;
     this.state.sequence = data.upcomingCards;
     
-    // Track opponent's played card
+    // Track played cards
     ui.addOpponentPlayedCard(data.opponentCard);
+    ui.addPlayerPlayedCard(data.yourCard);
     
     // Determine winner type
     let winner = null;
@@ -342,8 +373,9 @@ class GameManager {
     ui.showBattleCards(data.yourCard, data.opponentCard, winner);
     ui.updateScores(data.yourScore, data.opponentScore);
     
-    // Update opponent cards display to show revealed cards
+    // Update cards display to show revealed/played cards
     ui.renderOpponentCards(6, data.round);
+    ui.renderPlayerCards(this.state.sequence, 0, true);
     
     // Show result overlay
     let title, type;
@@ -359,6 +391,20 @@ class GameManager {
     }
     
     ui.showRoundResult(title, data.explanation, type);
+  }
+
+  /**
+   * Handle continue countdown from server
+   */
+  onContinueCountdown(data) {
+    ui.updateContinueCountdown(data.remaining);
+  }
+
+  /**
+   * Handle opponent pressed continue
+   */
+  onOpponentContinued() {
+    ui.showOpponentContinued();
   }
 
   /**
@@ -399,14 +445,19 @@ class GameManager {
     this.state.opponentName = data.opponentName || this.state.opponentName;
     this.state.playerName = data.playerName || this.state.playerName;
     
-    // Restore opponent's played cards from history
+    // Restore played cards from history
+    ui.clearOpponentPlayedCards();
+    ui.clearPlayerPlayedCards();
     if (data.roundHistory) {
-      ui.clearOpponentPlayedCards();
       data.roundHistory.forEach(round => {
-        const opponentCard = Object.entries(round.cards).find(([id]) => id !== this.state.playerId);
-        if (opponentCard) {
-          ui.addOpponentPlayedCard(opponentCard[1]);
-        }
+        // Find opponent's and player's cards
+        Object.entries(round.cards).forEach(([playerId, card]) => {
+          if (playerId === this.state.playerId) {
+            ui.addPlayerPlayedCard(card);
+          } else {
+            ui.addOpponentPlayedCard(card);
+          }
+        });
       });
     }
     
@@ -423,7 +474,7 @@ class GameManager {
       ui.setupGameScreen(this.state.playerName, this.state.opponentName);
       ui.updateRound(data.currentRound + 1);
       ui.updateScores(data.yourScore, data.opponentScore);
-      ui.renderPlayerCards(this.state.sequence, 0);
+      ui.renderPlayerCards(this.state.sequence, 0, true);
       ui.renderOpponentCards(6, data.currentRound);
       ui.updateSwaps(this.state.swapsRemaining);
       ui.setActionsEnabled(this.state.swapsRemaining > 0 && data.phase === 'swap');
@@ -438,6 +489,15 @@ class GameManager {
    */
   onError(data) {
     ui.showToast(data.message);
+    
+    // If reconnection failed, clear session and show lobby
+    if (data.message === 'Invalid reconnection attempt' || 
+        data.message === 'Lobby no longer exists' ||
+        data.message === 'Player not found') {
+      socketHandler.clearSession();
+      ui.clearRoomFromUrl();
+      ui.showScreen('lobby');
+    }
   }
 
   /**
@@ -473,8 +533,23 @@ class GameManager {
     const roomCode = ui.getRoomFromUrl();
     if (roomCode && roomCode.length === 6) {
       ui.elements.lobbyCodeInput.value = roomCode;
-      ui.showToast(`Комната ${roomCode} - введите имя и нажмите "Присоединиться"`);
+      // Auto-join after a short delay to let player see what's happening
+      setTimeout(() => {
+        if (ui.getPlayerName()) {
+          this.joinLobby();
+        } else {
+          ui.showToast(`Комната ${roomCode} - введите имя для подключения`);
+        }
+      }, 500);
     }
+  }
+
+  /**
+   * Player pressed continue button after round result
+   */
+  continueRound() {
+    socketHandler.socket.emit('continueRound');
+    ui.setContinueButtonWaiting(true);
   }
 }
 

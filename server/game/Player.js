@@ -20,18 +20,21 @@ class Player {
   setSequence(sequence) {
     if (this.sequenceSet) return false;
     
+    // Filter out null values and validate
+    const validSequence = sequence.filter(c => c !== null && c !== undefined);
+    
     // Validate that sequence contains exactly the cards in hand
-    if (sequence.length !== this.hand.length) return false;
+    if (validSequence.length !== this.hand.length) return false;
     
     const handSet = new Set(this.hand.map(c => c.id));
-    const seqSet = new Set(sequence.map(c => c.id));
+    const seqSet = new Set(validSequence.map(c => c.id));
     
     if (handSet.size !== seqSet.size) return false;
     for (const id of handSet) {
       if (!seqSet.has(id)) return false;
     }
     
-    this.sequence = sequence;
+    this.sequence = validSequence;
     this.sequenceSet = true;
     return true;
   }

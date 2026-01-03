@@ -38,8 +38,12 @@
     });
 
     ui.elements.copyCodeBtn.addEventListener('click', () => {
-      const code = ui.elements.displayLobbyCode.textContent;
-      ui.copyLobbyCode(code);
+      ui.copyLobbyLink();
+    });
+
+    // Click on share link input also copies
+    ui.elements.shareLink.addEventListener('click', () => {
+      ui.copyLobbyLink();
     });
 
     // Enter key support for inputs
@@ -72,6 +76,11 @@
 
     ui.elements.skipBtn.addEventListener('click', () => {
       game.skipSwap();
+    });
+
+    // Continue button after round result
+    ui.elements.continueBtn.addEventListener('click', () => {
+      game.continueRound();
     });
 
     // Play again

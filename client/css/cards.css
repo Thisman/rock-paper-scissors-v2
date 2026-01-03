@@ -1,7 +1,7 @@
 /* Card Styles */
 .card {
-  width: 70px;
-  height: 98px;
+  width: 100px;
+  height: 140px;
   border-radius: var(--radius-md);
   position: relative;
   cursor: pointer;
@@ -122,16 +122,18 @@
 
 /* Card content */
 .card-icon {
-  font-size: 2rem;
+  font-size: 2.2rem;
   margin-bottom: var(--spacing-xs);
 }
 
 .card-label {
-  font-size: 0.65rem;
+  font-size: 0.7rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
   opacity: 0.9;
+  text-align: center;
+  line-height: 1.2;
 }
 
 /* Simple card (no flip animation) */
@@ -171,8 +173,8 @@
 
 /* Small cards for history */
 .card-mini {
-  width: 32px;
-  height: 44px;
+  width: 40px;
+  height: 56px;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
@@ -215,6 +217,14 @@
 .card.swap-candidate {
   box-shadow: 0 0 15px var(--accent-secondary);
   animation: pulse 1s ease infinite;
+}
+
+/* Selected card for swap */
+.card.selected {
+  transform: translateY(-12px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4), 0 0 20px var(--accent-primary);
+  animation: none;
+  z-index: 10;
 }
 
 .swap-arrow {
@@ -263,5 +273,23 @@
   justify-content: center;
   font-size: 2rem;
   color: var(--text-muted);
+}
+
+/* Light theme - white text on cards */
+[data-theme="light"] .card-simple .card-label,
+[data-theme="light"] .card-front .card-label {
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* Swap candidate states */
+.card.swap-adjacent {
+  box-shadow: 0 0 15px var(--accent-secondary);
+  animation: pulse 1s ease infinite;
+}
+
+.card.swap-unavailable {
+  opacity: 0.5;
+  pointer-events: none;
 }
 

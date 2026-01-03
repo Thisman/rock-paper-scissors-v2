@@ -55,6 +55,11 @@ io.on('connection', (socket) => {
     lobbyManager.handleSkipSwap(socket);
   });
   
+  // Player continues to next round
+  socket.on('continueRound', () => {
+    lobbyManager.handleContinueRound(socket);
+  });
+  
   // Handle disconnection
   socket.on('disconnect', () => {
     console.log(`Player disconnected: ${socket.id}`);

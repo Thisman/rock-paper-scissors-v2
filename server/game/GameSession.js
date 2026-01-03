@@ -5,7 +5,7 @@ const Timer = require('../utils/Timer');
 const TIMERS = {
   SEQUENCE: 60,  // 60 seconds to set sequence
   SWAP: 20,      // 20 seconds for swap decision
-  REVEAL: 3      // 3 seconds to show round result
+  CONTINUE: 5    // 5 seconds before next round (or both players click continue)
 };
 
 const GamePhase = {
@@ -30,6 +30,7 @@ class GameSession {
     this.roundHistory = [];
     this.timer = null;
     this.paused = false;
+    this.continueReady = new Set(); // Track players who clicked continue
   }
 
   /**
@@ -281,12 +282,58 @@ class GameSession {
     
     this.currentRound++;
     
-    // Start next round after delay or end game
-    setTimeout(() => {
-      if (this.phase === GamePhase.REVEAL) {
-        this.startRound();
-      }
-    }, TIMERS.REVEAL * 1000);
+    // Reset continue ready state
+    this.continueReady.clear();
+    
+    // Start continue countdown
+    this.startContinueTimer();
+  }
+
+  /**
+   * Start countdown for continue phase
+   */
+  startContinueTimer() {
+    this.timer = new Timer(
+      TIMERS.CONTINUE,
+      () => this.onContinueTimeout(),
+      (remaining) => this.broadcastContinueTimer(remaining)
+    );
+    this.timer.start();
+  }
+
+  /**
+   * Handle continue timeout - start next round
+   */
+  onContinueTimeout() {
+    if (this.phase === GamePhase.REVEAL) {
+      this.startRound();
+    }
+  }
+
+  /**
+   * Handle player clicking continue button
+   */
+  handleContinue(playerId) {
+    if (this.phase !== GamePhase.REVEAL) return;
+    
+    this.continueReady.add(playerId);
+    
+    // Notify opponent
+    const opponent = this.getOpponent(playerId);
+    this.io.to(opponent.socketId).emit('opponentContinued');
+    
+    // If both players are ready, start next round immediately
+    if (this.continueReady.size >= 2) {
+      this.timer.clear();
+      this.startRound();
+    }
+  }
+
+  /**
+   * Broadcast continue timer update
+   */
+  broadcastContinueTimer(remaining) {
+    this.broadcast('continueCountdown', { remaining });
   }
 
   /**

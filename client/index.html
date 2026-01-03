@@ -46,7 +46,7 @@
             </div>
             
             <div class="join-section">
-              <input type="text" id="lobby-code" placeholder="Код комнаты" maxlength="6">
+              <input type="text" id="lobby-code" placeholder="Код" maxlength="6">
               <button id="join-lobby-btn" class="btn btn-secondary">
                 Присоединиться
               </button>
@@ -59,10 +59,13 @@
             <div class="loader"></div>
             <p>Ожидание соперника...</p>
             <div class="lobby-code-display">
-              Код комнаты: <strong id="display-lobby-code">------</strong>
+              Код: <strong id="display-lobby-code">------</strong>
+            </div>
+            <p class="share-hint">Поделитесь ссылкой для приглашения:</p>
+            <div class="share-link-container">
+              <input type="text" id="share-link" class="share-link-input" readonly>
               <button id="copy-code-btn" class="btn-icon-only" title="Копировать">📋</button>
             </div>
-            <p class="share-hint">Поделитесь ссылкой для приглашения</p>
           </div>
         </div>
       </div>
@@ -174,6 +177,8 @@
         <div class="result-content">
           <h2 id="result-title">Результат</h2>
           <p id="result-message"></p>
+          <p id="result-wait-text" class="result-wait-text">Ожидание соперника... <span id="result-countdown">5</span>с</p>
+          <button id="continue-btn" class="btn btn-primary">Продолжить</button>
         </div>
       </div>
     </div>

@@ -147,6 +147,22 @@ class LobbyManager {
   }
 
   /**
+   * Handle continue round action
+   */
+  handleContinueRound(socket) {
+    const lobbyId = this.playerToLobby.get(socket.id);
+    if (!lobbyId) return;
+    
+    const lobby = this.lobbies.get(lobbyId);
+    if (!lobby || !lobby.session) return;
+    
+    const player = lobby.players.find(p => p.socketId === socket.id);
+    if (!player) return;
+    
+    lobby.session.handleContinue(player.id);
+  }
+
+  /**
    * Handle player disconnection
    */
   handleDisconnect(socket) {

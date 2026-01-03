@@ -44,6 +44,9 @@ class UIManager {
       roundResult: document.getElementById('round-result'),
       resultTitle: document.getElementById('result-title'),
       resultMessage: document.getElementById('result-message'),
+      resultWaitText: document.getElementById('result-wait-text'),
+      resultCountdown: document.getElementById('result-countdown'),
+      continueBtn: document.getElementById('continue-btn'),
       
       // Game Over
       gameoverIcon: document.getElementById('gameover-icon'),
@@ -62,12 +65,16 @@ class UIManager {
       
       // Theme
       themeToggle: document.getElementById('theme-toggle'),
-      themeIcon: document.querySelector('.theme-icon')
+      themeIcon: document.querySelector('.theme-icon'),
+      
+      // Share link
+      shareLink: document.getElementById('share-link')
     };
     
     this.currentScreen = 'lobby';
     this.timerInterval = null;
     this.opponentPlayedCards = []; // Track revealed opponent cards
+    this.playerPlayedCards = []; // Track player's played cards
     
     // Initialize theme
     this.initTheme();
@@ -133,6 +140,11 @@ class UIManager {
     
     // Update URL with room code
     this.updateUrlWithRoom(lobbyCode);
+    
+    // Set share link
+    const url = new URL(window.location.origin);
+    url.searchParams.set('room', lobbyCode);
+    this.elements.shareLink.value = url.toString();
   }
 
   /**
@@ -279,19 +291,21 @@ class UIManager {
   updateTimer(elementId, seconds, maxSeconds) {
     const timerEl = document.getElementById(elementId);
     if (timerEl) {
-      timerEl.textContent = seconds;
+      // Always show integer
+      const displaySeconds = Math.ceil(seconds);
+      timerEl.textContent = displaySeconds;
       
       // Update progress circle
       const container = timerEl.closest('.timer-container');
       if (container) {
         const progress = container.querySelector('.timer-progress');
         if (progress) {
-          const offset = 283 * (1 - seconds / maxSeconds);
+          const offset = 283 * (1 - displaySeconds / maxSeconds);
           progress.style.strokeDashoffset = offset;
         }
         
         // Add warning class if low time
-        if (seconds <= 5) {
+        if (displaySeconds <= 5) {
           container.classList.add('timer-warning');
         } else {
           container.classList.remove('timer-warning');
@@ -311,21 +325,45 @@ class UIManager {
   }
 
   /**
-   * Render player cards in game view
+   * Render player cards in game view (includes played cards)
    */
-  renderPlayerCards(cards, currentRound = 0) {
+  renderPlayerCards(cards, currentRound = 0, showPlayed = true) {
     this.elements.playerCards.innerHTML = '';
+    
+    // First render played cards if showPlayed is true
+    if (showPlayed && this.playerPlayedCards.length > 0) {
+      this.playerPlayedCards.forEach((card, index) => {
+        const cardEl = this.createCardElement(card, { simple: true });
+        cardEl.classList.add('used');
+        cardEl.dataset.index = index;
+        this.elements.playerCards.appendChild(cardEl);
+      });
+    }
+    
+    // Then render remaining cards
+    const startIndex = showPlayed ? this.playerPlayedCards.length : 0;
     cards.forEach((card, index) => {
       const cardEl = this.createCardElement(card, { simple: true });
-      if (index < currentRound) {
-        cardEl.classList.add('used');
-      }
-      if (index === currentRound) {
+      if (index === 0 && showPlayed) {
         cardEl.classList.add('current');
       }
-      cardEl.dataset.index = index;
+      cardEl.dataset.index = startIndex + index;
       this.elements.playerCards.appendChild(cardEl);
     });
+  }
+
+  /**
+   * Add player's played card
+   */
+  addPlayerPlayedCard(card) {
+    this.playerPlayedCards.push(card);
+  }
+
+  /**
+   * Clear player's played cards
+   */
+  clearPlayerPlayedCards() {
+    this.playerPlayedCards = [];
   }
 
   /**
@@ -416,6 +454,18 @@ class UIManager {
   }
 
   /**
+   * Update swap button state based on remaining swaps
+   */
+  updateSwapButtonState(swapsRemaining) {
+    if (swapsRemaining <= 0) {
+      this.elements.swapBtn.disabled = true;
+      this.elements.swapBtn.classList.add('btn-disabled');
+    } else {
+      this.elements.swapBtn.classList.remove('btn-disabled');
+    }
+  }
+
+  /**
    * Show battle cards
    */
   showBattleCards(playerCard, opponentCard, winner) {
@@ -445,17 +495,60 @@ class UIManager {
   }
 
   /**
-   * Show round result overlay
+   * Show round result overlay with continue button
    */
   showRoundResult(title, message, type = 'draw') {
     this.elements.resultTitle.textContent = title;
     this.elements.resultTitle.className = `result-${type}`;
     this.elements.resultMessage.textContent = message;
+    this.elements.resultCountdown.textContent = '5';
+    this.elements.continueBtn.classList.remove('waiting');
+    this.elements.continueBtn.textContent = 'Продолжить';
+    this.elements.resultWaitText.textContent = 'Ожидание соперника... 5с';
     this.elements.roundResult.classList.remove('hidden');
     
-    setTimeout(() => {
-      this.elements.roundResult.classList.add('hidden');
-    }, 2500);
+    // Don't auto-hide - server will trigger next round
+  }
+
+  /**
+   * Hide round result overlay
+   */
+  hideRoundResult() {
+    this.elements.roundResult.classList.add('hidden');
+  }
+
+  /**
+   * Update continue countdown
+   */
+  updateContinueCountdown(seconds) {
+    this.elements.resultCountdown.textContent = seconds;
+    const text = this.elements.resultWaitText.textContent;
+    // Keep the "Ожидание соперника..." or "Соперник готов!" part
+    if (text.includes('Соперник готов')) {
+      this.elements.resultWaitText.innerHTML = `Соперник готов! <span id="result-countdown">${seconds}</span>с`;
+    } else {
+      this.elements.resultWaitText.innerHTML = `Ожидание соперника... <span id="result-countdown">${seconds}</span>с`;
+    }
+  }
+
+  /**
+   * Show that opponent has pressed continue
+   */
+  showOpponentContinued() {
+    this.elements.resultWaitText.innerHTML = `Соперник готов! <span id="result-countdown">${this.elements.resultCountdown.textContent}</span>с`;
+  }
+
+  /**
+   * Set continue button to waiting state
+   */
+  setContinueButtonWaiting(waiting) {
+    if (waiting) {
+      this.elements.continueBtn.classList.add('waiting');
+      this.elements.continueBtn.textContent = 'Ожидание...';
+    } else {
+      this.elements.continueBtn.classList.remove('waiting');
+      this.elements.continueBtn.textContent = 'Продолжить';
+    }
   }
 
   /**
@@ -488,8 +581,8 @@ class UIManager {
           : 'Повезёт в следующий раз!';
     }
     
-    // Render round history
-    this.renderRoundHistory(data.roundHistory, data);
+    // Render round history with explicit player ID
+    this.renderRoundHistory(data.roundHistory, data, game.state.playerId);
     
     this.showScreen('gameover');
   }
@@ -497,20 +590,23 @@ class UIManager {
   /**
    * Render round history in game over screen
    */
-  renderRoundHistory(history, gameData) {
+  renderRoundHistory(history, gameData, playerId) {
     this.elements.roundHistory.innerHTML = '';
     
     if (!history) return;
+    
+    // Use the passed playerId or fallback to game state
+    const myPlayerId = playerId || game.state.playerId || socketHandler.playerId;
     
     history.forEach((round, index) => {
       const item = document.createElement('div');
       item.className = 'round-history-item';
       
-      const myCard = round.cards[socketHandler.playerId];
+      const myCard = round.cards[myPlayerId];
       if (round.isDraw) {
         item.classList.add('draw');
         item.textContent = '=';
-      } else if (round.winner === socketHandler.playerId) {
+      } else if (round.winner === myPlayerId) {
         item.classList.add('win');
         item.textContent = '✓';
       } else {
@@ -571,14 +667,12 @@ class UIManager {
   }
 
   /**
-   * Copy lobby code to clipboard
+   * Copy lobby link to clipboard
    */
-  async copyLobbyCode(code) {
+  async copyLobbyLink() {
     try {
-      // Copy full URL with room code
-      const url = new URL(window.location.href);
-      url.searchParams.set('room', code);
-      await navigator.clipboard.writeText(url.toString());
+      const linkText = this.elements.shareLink.value;
+      await navigator.clipboard.writeText(linkText);
       this.showToast('Ссылка скопирована!');
     } catch (err) {
       this.showToast('Не удалось скопировать');
@@ -596,6 +690,7 @@ class UIManager {
     this.elements.handCards.innerHTML = '';
     this.resetBattleCards();
     this.clearOpponentPlayedCards();
+    this.clearPlayerPlayedCards();
     this.clearRoomFromUrl();
     this.showScreen('lobby');
   }
