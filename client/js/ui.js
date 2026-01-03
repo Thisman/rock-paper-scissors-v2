@@ -22,7 +22,7 @@ class UIManager {
       joinLobbyBtn: document.getElementById('join-lobby-btn'),
       waitingSection: document.getElementById('waiting-section'),
       displayLobbyCode: document.getElementById('display-lobby-code'),
-      copyCodeBtn: document.getElementById('copy-code-btn'),
+      lobbyCodeCopy: document.getElementById('lobby-code-copy'),
       
       // Preview
       previewTimer: document.getElementById('preview-timer'),
@@ -80,9 +80,6 @@ class UIManager {
       themeToggle: document.getElementById('theme-toggle'),
       themeIcon: document.querySelector('.theme-icon'),
       
-      // Share link
-      shareLink: document.getElementById('share-link'),
-      
       // Leave lobby
       leaveLobbyBtn: document.getElementById('leave-lobby-btn'),
       
@@ -104,6 +101,8 @@ class UIManager {
     this.timerInterval = null;
     this.opponentPlayedCards = []; // Track revealed opponent cards
     this.playerPlayedCards = []; // Track player's played cards
+    this.currentUserId = null; // Current user ID for display
+    this.currentRoomId = null; // Current room ID for display
     
     // Initialize theme
     this.initTheme();
@@ -156,19 +155,39 @@ class UIManager {
     // Use persistent player ID if available
     const displayId = playerId || localStorage.getItem('persistentPlayerId');
     if (displayId) {
-      // Show shortened version for display
-      const shortId = displayId.length > 20 ? displayId.substring(0, 20) + '...' : displayId;
-      this.elements.userIdDisplay.textContent = `ID: ${shortId}`;
+      // Show full ID
+      this.currentUserId = displayId;
+      this.updateIdDisplay();
     }
   }
 
   /**
-   * Display room ID above user ID
+   * Display room ID after user ID on the same line
    */
   showRoomId(roomId) {
-    if (roomId) {
+    this.currentRoomId = roomId || null;
+    this.updateIdDisplay();
+  }
+  
+  /**
+   * Update the combined ID display
+   */
+  updateIdDisplay() {
+    const userId = this.currentUserId || localStorage.getItem('persistentPlayerId');
+    const roomId = this.currentRoomId;
+    
+    if (userId && roomId) {
+      // Show both on the same line, separated by comma
+      this.elements.userIdDisplay.textContent = `ID: ${userId}, Комната: ${roomId}`;
+      this.elements.roomIdDisplay.textContent = '';
+    } else if (userId) {
+      this.elements.userIdDisplay.textContent = `ID: ${userId}`;
+      this.elements.roomIdDisplay.textContent = '';
+    } else if (roomId) {
+      this.elements.userIdDisplay.textContent = '';
       this.elements.roomIdDisplay.textContent = `Комната: ${roomId}`;
     } else {
+      this.elements.userIdDisplay.textContent = '';
       this.elements.roomIdDisplay.textContent = '';
     }
   }
@@ -305,14 +324,6 @@ class UIManager {
     this.elements.displayLobbyCode.textContent = lobbyCode;
     this.elements.createLobbyBtn.disabled = true;
     this.elements.joinLobbyBtn.disabled = true;
-    
-    // Update URL with room code
-    this.updateUrlWithRoom(lobbyCode);
-    
-    // Set share link
-    const url = new URL(window.location.origin);
-    url.searchParams.set('room', lobbyCode);
-    this.elements.shareLink.value = url.toString();
   }
 
   /**
@@ -878,11 +889,11 @@ class UIManager {
   /**
    * Copy lobby link to clipboard
    */
-  async copyLobbyLink() {
+  async copyLobbyCode() {
     try {
-      const linkText = this.elements.shareLink.value;
-      await navigator.clipboard.writeText(linkText);
-      this.showToast('Ссылка скопирована!');
+      const lobbyCode = this.elements.displayLobbyCode.textContent;
+      await navigator.clipboard.writeText(lobbyCode);
+      this.showToast('Код скопирован!');
     } catch (err) {
       this.showToast('Не удалось скопировать');
     }
@@ -900,7 +911,8 @@ class UIManager {
     this.resetBattleCards();
     this.clearOpponentPlayedCards();
     this.clearPlayerPlayedCards();
-    this.clearRoomFromUrl();
+    this.currentRoomId = null;
+    this.updateIdDisplay();
     this.showScreen('lobby');
   }
 }

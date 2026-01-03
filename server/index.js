@@ -70,6 +70,11 @@ io.on('connection', (socket) => {
     lobbyManager.handleLeaveLobby(socket);
   });
   
+  // Player clicks "Play Again" after game ends
+  socket.on('playAgain', () => {
+    lobbyManager.handlePlayAgain(socket);
+  });
+  
   // Handle disconnection
   socket.on('disconnect', () => {
     console.log(`Player disconnected: ${socket.id}`);

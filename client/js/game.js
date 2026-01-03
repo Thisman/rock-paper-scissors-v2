@@ -59,7 +59,9 @@ class GameManager {
       .on('gameEnd', (data) => this.onGameEnd(data))
       .on('opponentDisconnected', (data) => this.onOpponentDisconnected(data))
       .on('opponentReconnected', () => this.onOpponentReconnected())
+      .on('opponentLeft', (data) => this.onOpponentLeft(data))
       .on('reconnected', (data) => this.onReconnected(data))
+      .on('gameResumed', (data) => this.onGameResumed(data))
       .on('error', (data) => this.onError(data));
   }
 
@@ -95,10 +97,12 @@ class GameManager {
   onLobbyCreated(data) {
     this.state.lobbyId = data.lobbyId;
     this.state.playerId = data.playerId;
-    socketHandler.saveSession(data.lobbyId, data.playerId);
+    this.joinedFromUrl = false;
+    
+    // Add room ID to URL for sharing
+    ui.updateUrlWithRoom(data.lobbyId);
     
     ui.showWaiting(data.lobbyId);
-    ui.updateUrlWithRoom(data.lobbyId);
     ui.showUserId(data.playerId);
     ui.showRoomId(data.lobbyId);
   }
@@ -110,10 +114,11 @@ class GameManager {
     this.state.lobbyId = data.lobbyId;
     this.state.playerId = data.playerId;
     this.state.opponentName = data.opponentName;
-    socketHandler.saveSession(data.lobbyId, data.playerId);
+    this.joinedFromUrl = false;
     
-    // Update URL for second player too
+    // Add room ID to URL
     ui.updateUrlWithRoom(data.lobbyId);
+    
     ui.showUserId(data.playerId);
     ui.showRoomId(data.lobbyId);
     
@@ -493,8 +498,6 @@ class GameManager {
    */
   onGameEnd(data) {
     this.state.phase = 'gameover';
-    socketHandler.clearSession();
-    
     ui.showGameOver(data);
   }
 
@@ -514,9 +517,49 @@ class GameManager {
   }
 
   /**
+   * Handle opponent left before game started
+   */
+  onOpponentLeft(data) {
+    ui.showToast(data.message || 'Соперник покинул игру');
+    // Show waiting screen again
+    ui.showWaiting(this.state.lobbyId);
+  }
+
+  /**
+   * Handle game resumed after reconnection
+   */
+  onGameResumed(data) {
+    // Update phase from server
+    if (data.phase) {
+      this.state.phase = data.phase;
+    }
+    
+    // Update timer if provided
+    if (data.timeRemaining !== undefined) {
+      if (this.state.phase === 'swap') {
+        ui.updateTimer('game-timer', data.timeRemaining, this.maxSwapTime);
+      } else if (this.state.phase === 'sequence') {
+        ui.updateTimer('sequence-timer', data.timeRemaining, this.maxSequenceTime);
+      } else if (this.state.phase === 'preview') {
+        ui.updateTimer('preview-timer', data.timeRemaining, this.maxPreviewTime || 10);
+      }
+    }
+    
+    // Re-enable appropriate actions based on phase
+    if (this.state.phase === 'swap') {
+      ui.setActionsEnabled(this.state.swapsRemaining > 0);
+    }
+  }
+
+  /**
    * Handle reconnection to game
    */
   onReconnected(data) {
+    // Update player ID first (important for card matching)
+    if (data.playerId) {
+      this.state.playerId = data.playerId;
+    }
+    
     this.state.phase = data.phase;
     this.state.currentRound = data.currentRound;
     this.state.sequence = data.upcomingCards || data.yourSequence;
@@ -527,18 +570,21 @@ class GameManager {
     this.state.opponentName = data.opponentName || this.state.opponentName;
     this.state.playerName = data.playerName || this.state.playerName;
     this.state.lobbyId = data.lobbyId || this.state.lobbyId;
+    this.state.hand = data.hand || this.state.hand;
     
-    // Show room ID
+    // Show IDs
+    ui.showUserId(this.state.playerId);
     ui.showRoomId(this.state.lobbyId);
     
     // Restore played cards from history
     ui.clearOpponentPlayedCards();
     ui.clearPlayerPlayedCards();
-    if (data.roundHistory) {
+    if (data.roundHistory && data.roundHistory.length > 0) {
+      const myPlayerId = this.state.playerId;
       data.roundHistory.forEach(round => {
         // Find opponent's and player's cards
         Object.entries(round.cards).forEach(([playerId, card]) => {
-          if (playerId === this.state.playerId) {
+          if (playerId === myPlayerId) {
             ui.addPlayerPlayedCard(card);
           } else {
             ui.addOpponentPlayedCard(card);
@@ -547,23 +593,125 @@ class GameManager {
       });
     }
     
-    // Restore appropriate screen
-    if (data.phase === 'sequence') {
+    // Restore appropriate screen based on phase
+    if (data.phase === 'preview') {
+      // Restore preview screen
+      this.state.opponentCards = data.opponentCards;
+      if (data.hand && data.opponentCards) {
+        ui.setupPreviewScreen(
+          this.state.playerName, 
+          this.state.opponentName, 
+          data.hand, 
+          data.opponentCards
+        );
+      }
+      if (data.isReady) {
+        ui.setPreviewReadyWaiting(true);
+      }
+      if (data.opponentReady) {
+        ui.showPreviewOpponentReady();
+      }
+      ui.updateTimer('preview-timer', data.timeRemaining, 10);
+      ui.showScreen('preview');
+    } else if (data.phase === 'sequence') {
       // Restore sequence screen
       ui.createSequenceSlots(6);
       if (data.hand) {
+        this.state.hand = data.hand;
         ui.renderHandCards(data.hand);
         dragDrop.init(data.hand, (sequence) => this.onSequenceChange(sequence));
       }
+      if (data.sequenceSet) {
+        ui.setConfirmEnabled(false);
+        ui.elements.confirmSequenceBtn.textContent = 'Ожидание соперника...';
+      }
+      ui.updateTimer('sequence-timer', data.timeRemaining, 60);
       ui.showScreen('sequence');
-    } else if (data.phase === 'swap' || data.phase === 'reveal' || data.phase === 'round_start' || data.phase === 'paused') {
+    } else if (data.phase === 'swap' || data.phase === 'round_start') {
+      ui.setupGameScreen(this.state.playerName, this.state.opponentName);
+      // Round display should be currentRound + 1 since currentRound is 0-indexed
+      const displayRound = data.currentRound < 6 ? data.currentRound + 1 : data.currentRound;
+      ui.updateRound(displayRound);
+      ui.updateScores(data.yourScore, data.opponentScore);
+      ui.renderPlayerCards(this.state.sequence, 0, true);
+      ui.renderOpponentCards(6, data.currentRound);
+      ui.updateSwaps(this.state.swapsRemaining, this.state.opponentSwapsRemaining);
+      // Enable actions only if in swap phase and not ready and has swaps
+      const canSwap = this.state.swapsRemaining > 0 && data.phase === 'swap' && !data.isReady;
+      ui.setActionsEnabled(canSwap);
+      if (data.isReady) {
+        ui.setActionsEnabled(false);
+      }
+      // Reset battle cards for current round
+      if (this.state.sequence && this.state.sequence.length > 0) {
+        ui.resetBattleCards(this.state.sequence[0]);
+      }
+      ui.updateTimer('game-timer', data.timeRemaining, 20);
+      ui.showScreen('game');
+    } else if (data.phase === 'reveal') {
+      ui.setupGameScreen(this.state.playerName, this.state.opponentName);
+      ui.updateRound(data.currentRound);
+      ui.updateScores(data.yourScore, data.opponentScore);
+      ui.renderPlayerCards(this.state.sequence, 0, true);
+      ui.renderOpponentCards(6, data.currentRound);
+      ui.updateSwaps(this.state.swapsRemaining, this.state.opponentSwapsRemaining);
+      ui.setActionsEnabled(false);
+      
+      // Show the last round result if available
+      if (data.roundHistory && data.roundHistory.length > 0) {
+        const lastRound = data.roundHistory[data.roundHistory.length - 1];
+        const myPlayerId = this.state.playerId;
+        const myCard = lastRound.cards[myPlayerId];
+        let opponentCard = null;
+        Object.entries(lastRound.cards).forEach(([pid, card]) => {
+          if (pid !== myPlayerId) opponentCard = card;
+        });
+        
+        // Determine winner type
+        let winner = null;
+        if (!lastRound.isDraw) {
+          winner = lastRound.winner === myPlayerId ? 'player' : 'opponent';
+        }
+        
+        // Show battle cards with results
+        if (myCard && opponentCard) {
+          ui.showBattleCards(myCard, opponentCard, winner);
+        }
+        
+        // Show round result overlay
+        let title, type;
+        if (lastRound.isDraw) {
+          title = 'Ничья!';
+          type = 'draw';
+        } else if (lastRound.winner === myPlayerId) {
+          title = 'Вы выиграли раунд!';
+          type = 'win';
+        } else {
+          title = 'Соперник выиграл раунд';
+          type = 'lose';
+        }
+        
+        ui.showRoundResult(title, lastRound.explanation, type, myCard, opponentCard, this.state.playerName, this.state.opponentName);
+        
+        // Set continue button state
+        if (data.isReady) {
+          ui.setContinueButtonWaiting(true);
+        }
+        if (data.opponentReady) {
+          ui.showOpponentContinued();
+        }
+      }
+      
+      ui.showScreen('game');
+    } else if (data.phase === 'paused') {
+      // Treat paused as the phase it was paused from
       ui.setupGameScreen(this.state.playerName, this.state.opponentName);
       ui.updateRound(data.currentRound + 1);
       ui.updateScores(data.yourScore, data.opponentScore);
       ui.renderPlayerCards(this.state.sequence, 0, true);
       ui.renderOpponentCards(6, data.currentRound);
       ui.updateSwaps(this.state.swapsRemaining, this.state.opponentSwapsRemaining);
-      ui.setActionsEnabled(this.state.swapsRemaining > 0 && data.phase === 'swap');
+      ui.setActionsEnabled(false);
       ui.showScreen('game');
     }
     
@@ -576,15 +724,24 @@ class GameManager {
   onError(data) {
     ui.showToast(data.message);
     
-    // If reconnection failed or lobby invalid, clear session and show lobby
+    // If we tried to join from URL and it failed, clear the URL
+    if (this.joinedFromUrl) {
+      ui.clearRoomFromUrl();
+      this.joinedFromUrl = false;
+    }
+    
+    // If reconnection failed or lobby invalid, show lobby
     if (data.message === 'Invalid reconnection attempt' || 
         data.message === 'Lobby no longer exists' ||
         data.message === 'Player not found' ||
         data.message === 'Lobby is full' ||
-        data.message === 'Lobby not found') {
-      socketHandler.clearSession();
-      ui.clearRoomFromUrl();
-      ui.showRoomId(null);
+        data.message === 'Lobby not found' ||
+        data.message === 'Game has ended' ||
+        data.message === 'Opponent left the game' ||
+        data.message === 'Only original players can rejoin this game') {
+      ui.currentRoomId = null;
+      ui.updateIdDisplay();
+      ui.hideDisconnectOverlay();
       ui.showScreen('lobby');
     }
   }
@@ -593,6 +750,9 @@ class GameManager {
    * Play again - reset and return to lobby
    */
   playAgain() {
+    // Notify server to clear session data
+    socketHandler.socket.emit('playAgain');
+    
     this.state = {
       phase: 'lobby',
       playerId: null,
@@ -616,32 +776,21 @@ class GameManager {
   }
 
   /**
-   * Check URL for room code and auto-join
+   * Check URL for room code and try to auto-join
    */
   checkUrlForRoom() {
     const roomCode = ui.getRoomFromUrl();
     if (roomCode && roomCode.length === 6) {
       ui.elements.lobbyCodeInput.value = roomCode;
-      // Auto-join after a short delay to let player see what's happening
-      setTimeout(() => {
-        if (ui.getPlayerName()) {
-          this.joinLobby();
-        } else {
-          ui.showToast(`Комната ${roomCode} - введите имя для подключения`);
-        }
-      }, 500);
-    } else {
-      // Check if there's a saved session - if so, copy the room to URL
-      const savedSession = localStorage.getItem('gameSession');
-      if (savedSession) {
-        try {
-          const { lobbyId } = JSON.parse(savedSession);
-          if (lobbyId) {
-            ui.updateUrlWithRoom(lobbyId);
-          }
-        } catch (e) {
-          // Ignore
-        }
+      this.joinedFromUrl = true; // Track that we're joining from URL
+      
+      // Try to auto-join if player has a name
+      const playerName = ui.getPlayerName();
+      if (playerName) {
+        this.state.playerName = playerName;
+        socketHandler.joinLobby(roomCode, playerName);
+      } else {
+        ui.showToast(`Комната ${roomCode} - введите имя и нажмите "Присоединиться"`);
       }
     }
   }
@@ -651,11 +800,12 @@ class GameManager {
    */
   leaveLobby() {
     socketHandler.socket.emit('leaveLobby');
-    socketHandler.clearSession();
-    ui.clearRoomFromUrl();
-    ui.showRoomId(null);
+    ui.currentRoomId = null;
+    ui.updateIdDisplay();
     ui.hideWaiting();
     ui.hideDisconnectOverlay();
+    // Clear the lobby code input so the old room ID doesn't show
+    ui.elements.lobbyCodeInput.value = '';
     this.state.lobbyId = null;
     this.state.playerId = null;
     this.state.phase = 'lobby';

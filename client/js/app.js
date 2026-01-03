@@ -51,13 +51,9 @@
       game.joinLobby();
     });
 
-    ui.elements.copyCodeBtn.addEventListener('click', () => {
-      ui.copyLobbyLink();
-    });
-
-    // Click on share link input also copies
-    ui.elements.shareLink.addEventListener('click', () => {
-      ui.copyLobbyLink();
+    // Click on lobby code to copy
+    ui.elements.lobbyCodeCopy.addEventListener('click', () => {
+      ui.copyLobbyCode();
     });
 
     // Leave lobby button

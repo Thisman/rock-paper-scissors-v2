@@ -34,8 +34,8 @@ class SocketHandler {
       this.connected = true;
       this.emit('connected');
       
-      // Try to reconnect to game if we have stored session
-      this.tryReconnectToGame();
+      // Don't auto-redirect to game - let user stay on main page
+      // They can rejoin via saved session if needed
     });
 
     this.socket.on('disconnect', () => {
@@ -75,41 +75,9 @@ class SocketHandler {
     this.socket.on('gameEnd', (data) => this.emit('gameEnd', data));
     this.socket.on('opponentDisconnected', (data) => this.emit('opponentDisconnected', data));
     this.socket.on('opponentReconnected', () => this.emit('opponentReconnected'));
+    this.socket.on('opponentLeft', (data) => this.emit('opponentLeft', data));
     this.socket.on('reconnected', (data) => this.emit('reconnected', data));
     this.socket.on('gameResumed', (data) => this.emit('gameResumed', data));
-  }
-
-  /**
-   * Try to reconnect to an existing game
-   */
-  tryReconnectToGame() {
-    const savedSession = localStorage.getItem('gameSession');
-    if (savedSession) {
-      try {
-        const { lobbyId, playerId } = JSON.parse(savedSession);
-        this.socket.emit('reconnect', { lobbyId, playerId });
-      } catch (e) {
-        localStorage.removeItem('gameSession');
-      }
-    }
-  }
-
-  /**
-   * Save session for reconnection
-   */
-  saveSession(lobbyId, playerId) {
-    this.lobbyId = lobbyId;
-    this.playerId = playerId;
-    localStorage.setItem('gameSession', JSON.stringify({ lobbyId, playerId }));
-  }
-
-  /**
-   * Clear saved session
-   */
-  clearSession() {
-    this.lobbyId = null;
-    this.playerId = null;
-    localStorage.removeItem('gameSession');
   }
 
   /**

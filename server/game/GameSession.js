@@ -3,7 +3,7 @@ const { determineWinner, getWinExplanation, determineGameWinner } = require('./r
 const Timer = require('../utils/Timer');
 
 const TIMERS = {
-  PREVIEW: 10,   // 10 seconds to view cards
+  PREVIEW: 30,   // 30 seconds to view cards
   SEQUENCE: 60,  // 60 seconds to set sequence
   SWAP: 20,      // 20 seconds for swap decision
   CONTINUE: 5    // 5 seconds before next round (or both players click continue)
@@ -34,6 +34,14 @@ class GameSession {
     this.paused = false;
     this.continueReady = new Set(); // Track players who clicked continue
     this.previewReady = new Set(); // Track players who clicked ready in preview
+    this.completed = false; // Track if game has ended
+  }
+  
+  /**
+   * Check if the game session is completed
+   */
+  isCompleted() {
+    return this.completed || this.phase === GamePhase.GAME_OVER;
   }
 
   /**
@@ -412,6 +420,12 @@ class GameSession {
    */
   endGame() {
     this.phase = GamePhase.GAME_OVER;
+    this.completed = true;
+    
+    // Clear any active timer
+    if (this.timer) {
+      this.timer.clear();
+    }
     
     const player1 = this.players[0];
     const player2 = this.players[1];
@@ -435,6 +449,12 @@ class GameSession {
    */
   endGameByDisconnect(winnerId) {
     this.phase = GamePhase.GAME_OVER;
+    this.completed = true;
+    
+    // Clear any active timer
+    if (this.timer) {
+      this.timer.clear();
+    }
     
     const winner = this.getPlayer(winnerId);
     const loser = this.getOpponent(winnerId);
@@ -499,9 +519,28 @@ class GameSession {
     const player = this.getPlayer(playerId);
     const opponent = this.getOpponent(playerId);
     
+    // Determine the actual phase (use previousPhase if game was paused)
+    const actualPhase = this.previousPhase || this.phase;
+    
+    // Determine if player is ready in current phase
+    let isReady = player.ready;
+    let opponentReady = opponent.ready;
+    
+    // For reveal phase, check continueReady
+    if (actualPhase === 'reveal') {
+      isReady = this.continueReady.has(playerId);
+      opponentReady = this.continueReady.has(opponent.id);
+    }
+    
+    // For preview phase, check previewReady
+    if (actualPhase === 'preview') {
+      isReady = this.previewReady.has(playerId);
+      opponentReady = this.previewReady.has(opponent.id);
+    }
+    
     return {
       lobbyId: this.lobbyId,
-      phase: this.previousPhase || this.phase, // Return actual phase even if paused
+      phase: actualPhase,
       currentRound: this.currentRound,
       yourSequence: player.sequence,
       yourScore: player.score,
@@ -513,7 +552,15 @@ class GameSession {
       upcomingCards: player.sequence.slice(this.currentRound),
       hand: player.hand,
       playerName: player.name,
-      opponentName: opponent.name
+      opponentName: opponent.name,
+      playerId: playerId,
+      opponentId: opponent.id,
+      isReady: isReady,
+      opponentReady: opponentReady,
+      sequenceSet: player.sequenceSet,
+      opponentSequenceSet: opponent.sequenceSet,
+      // Include opponent cards for preview phase
+      opponentCards: actualPhase === 'preview' ? opponent.hand : null
     };
   }
 

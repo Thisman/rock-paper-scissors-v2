@@ -66,14 +66,10 @@
           <div class="waiting-card">
             <div class="loader"></div>
             <p>Ожидание соперника...</p>
-            <div class="lobby-code-display">
+            <div class="lobby-code-display clickable" id="lobby-code-copy" title="Нажмите, чтобы скопировать">
               Код: <strong id="display-lobby-code">------</strong>
             </div>
-            <p class="share-hint">Поделитесь ссылкой для приглашения:</p>
-            <div class="share-link-container">
-              <input type="text" id="share-link" class="share-link-input" readonly>
-              <button id="copy-code-btn" class="btn-icon-only" title="Копировать">📋</button>
-            </div>
+            <p class="share-hint">Нажмите на код, чтобы скопировать</p>
             <button id="leave-lobby-btn" class="btn btn-secondary btn-small">Покинуть</button>
           </div>
         </div>
@@ -111,8 +107,8 @@
         </div>
       </div>
       
-      <div class="action-bar fixed-footer">
-        <button id="preview-ready-btn" class="btn btn-primary btn-large">
+      <div class="action-bar fixed-footer game-footer">
+        <button id="preview-ready-btn" class="btn btn-primary">
           ✓ Готов
         </button>
         <p id="preview-status" class="preview-status"></p>
@@ -146,8 +142,8 @@
         </div>
       </div>
       
-      <div class="action-bar fixed-footer">
-        <button id="confirm-sequence-btn" class="btn btn-primary btn-large" disabled>
+      <div class="action-bar fixed-footer game-footer">
+        <button id="confirm-sequence-btn" class="btn btn-primary" disabled>
           Подтвердить расстановку
         </button>
       </div>
@@ -213,7 +209,7 @@
         </div>
       </div>
       
-      <div class="action-bar fixed-footer">
+      <div class="action-bar fixed-footer game-footer">
         <button id="swap-btn" class="btn btn-action">
           🔄 Свап
         </button>
