@@ -58,6 +58,9 @@
 .card-face.back {
   background: var(--card-back);
   border: 3px solid #3d3d54;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .card-back::before,
@@ -66,6 +69,8 @@
   font-size: 2rem;
   font-weight: 800;
   color: var(--text-muted);
+  position: relative;
+  z-index: 1;
 }
 
 .card-back::after,
@@ -76,6 +81,7 @@
   border: 2px dashed var(--text-muted);
   border-radius: var(--radius-sm);
   opacity: 0.3;
+  pointer-events: none;
 }
 
 /* Rock card - Red */
@@ -238,6 +244,11 @@
 /* Opponent cards */
 .opponent-cards .card {
   transform: rotate(180deg);
+}
+
+/* Revealed opponent cards (after round) */
+.opponent-cards .card.revealed {
+  transform: rotate(0);
 }
 
 /* Used card overlay */

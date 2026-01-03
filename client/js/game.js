@@ -184,7 +184,8 @@ class GameManager {
     }
     
     ui.updateRound(data.round);
-    ui.renderPlayerCards(this.state.sequence, data.round - 1);
+    // Show all remaining cards (including current round's card at index 0)
+    ui.renderPlayerCards(this.state.sequence, 0);
     ui.renderOpponentCards(6, data.round - 1);
     ui.resetBattleCards();
     ui.setActionsEnabled(this.state.swapsRemaining > 0);
@@ -217,10 +218,10 @@ class GameManager {
     this.state.swapMode = true;
     ui.showToast('Выберите карту для обмена');
     
-    // Highlight swappable cards
+    // Highlight swappable cards - all remaining cards can be swapped (including current)
     const cards = document.querySelectorAll('#player-cards .card');
     cards.forEach((card, index) => {
-      if (index > this.state.currentRound - 1) {
+      if (!card.classList.contains('used')) {
         card.classList.add('swap-candidate');
         card.onclick = () => this.selectCardForSwap(index);
       }
@@ -233,19 +234,22 @@ class GameManager {
   selectCardForSwap(index) {
     if (!this.state.swapMode) return;
     
-    const cards = document.querySelectorAll('#player-cards .card');
+    const cards = document.querySelectorAll('#player-cards .card:not(.used)');
     
     if (this.state.selectedCardIndex === null) {
       // First card selected
       this.state.selectedCardIndex = index;
-      cards[index].classList.add('selected');
+      const allCards = document.querySelectorAll('#player-cards .card');
+      allCards[index].classList.add('selected');
       ui.showToast('Выберите соседнюю карту');
     } else {
       // Second card selected - try to swap
+      // Positions are relative to remaining cards (index in the sequence array)
       const pos1 = this.state.selectedCardIndex;
       const pos2 = index;
       
       if (Math.abs(pos1 - pos2) === 1) {
+        // Send positions as relative to remaining cards (0-indexed from current card)
         socketHandler.swapCards(pos1, pos2);
       } else {
         ui.showToast('Можно менять только соседние карты');
@@ -282,10 +286,12 @@ class GameManager {
    * Handle swap confirmed
    */
   onSwapConfirmed(data) {
+    // Server sends remaining cards only
     this.state.sequence = data.sequence;
     this.state.swapsRemaining = data.swapsRemaining;
     
-    ui.renderPlayerCards(this.state.sequence, this.state.currentRound - 1);
+    // Render cards - all are remaining so no used cards
+    ui.renderPlayerCards(this.state.sequence, 0);
     ui.updateSwaps(this.state.swapsRemaining);
     ui.setActionsEnabled(false);
     ui.showToast('Свап выполнен!');
@@ -323,6 +329,9 @@ class GameManager {
     this.state.swapsRemaining = data.yourSwapsRemaining;
     this.state.sequence = data.upcomingCards;
     
+    // Track opponent's played card
+    ui.addOpponentPlayedCard(data.opponentCard);
+    
     // Determine winner type
     let winner = null;
     if (!data.isDraw) {
@@ -332,6 +341,9 @@ class GameManager {
     // Show battle cards
     ui.showBattleCards(data.yourCard, data.opponentCard, winner);
     ui.updateScores(data.yourScore, data.opponentScore);
+    
+    // Update opponent cards display to show revealed cards
+    ui.renderOpponentCards(6, data.round);
     
     // Show result overlay
     let title, type;
@@ -380,20 +392,41 @@ class GameManager {
   onReconnected(data) {
     this.state.phase = data.phase;
     this.state.currentRound = data.currentRound;
-    this.state.sequence = data.yourSequence;
+    this.state.sequence = data.upcomingCards || data.yourSequence;
     this.state.playerScore = data.yourScore;
     this.state.opponentScore = data.opponentScore;
     this.state.swapsRemaining = data.yourSwapsRemaining;
+    this.state.opponentName = data.opponentName || this.state.opponentName;
+    this.state.playerName = data.playerName || this.state.playerName;
+    
+    // Restore opponent's played cards from history
+    if (data.roundHistory) {
+      ui.clearOpponentPlayedCards();
+      data.roundHistory.forEach(round => {
+        const opponentCard = Object.entries(round.cards).find(([id]) => id !== this.state.playerId);
+        if (opponentCard) {
+          ui.addOpponentPlayedCard(opponentCard[1]);
+        }
+      });
+    }
     
     // Restore appropriate screen
     if (data.phase === 'sequence') {
+      // Restore sequence screen
+      ui.createSequenceSlots(6);
+      if (data.hand) {
+        ui.renderHandCards(data.hand);
+        dragDrop.init(data.hand, (sequence) => this.onSequenceChange(sequence));
+      }
       ui.showScreen('sequence');
-    } else if (data.phase === 'swap' || data.phase === 'reveal' || data.phase === 'round_start') {
+    } else if (data.phase === 'swap' || data.phase === 'reveal' || data.phase === 'round_start' || data.phase === 'paused') {
       ui.setupGameScreen(this.state.playerName, this.state.opponentName);
       ui.updateRound(data.currentRound + 1);
       ui.updateScores(data.yourScore, data.opponentScore);
-      ui.renderPlayerCards(data.yourSequence, data.currentRound);
+      ui.renderPlayerCards(this.state.sequence, 0);
       ui.renderOpponentCards(6, data.currentRound);
+      ui.updateSwaps(this.state.swapsRemaining);
+      ui.setActionsEnabled(this.state.swapsRemaining > 0 && data.phase === 'swap');
       ui.showScreen('game');
     }
     
@@ -431,6 +464,17 @@ class GameManager {
     };
     
     ui.reset();
+  }
+
+  /**
+   * Check URL for room code and auto-join
+   */
+  checkUrlForRoom() {
+    const roomCode = ui.getRoomFromUrl();
+    if (roomCode && roomCode.length === 6) {
+      ui.elements.lobbyCodeInput.value = roomCode;
+      ui.showToast(`Комната ${roomCode} - введите имя и нажмите "Присоединиться"`);
+    }
   }
 }
 

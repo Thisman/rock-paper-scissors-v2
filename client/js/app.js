@@ -18,6 +18,9 @@
     // Bind UI events
     bindEvents();
     
+    // Check URL for room code
+    game.checkUrlForRoom();
+    
     console.log('Rock-Paper-Scissors Online initialized');
   }
 
@@ -74,6 +77,11 @@
     // Play again
     ui.elements.playAgainBtn.addEventListener('click', () => {
       game.playAgain();
+    });
+
+    // Theme toggle
+    ui.elements.themeToggle.addEventListener('click', () => {
+      ui.toggleTheme();
     });
 
     // Handle visibility change for reconnection

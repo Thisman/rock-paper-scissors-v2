@@ -159,6 +159,21 @@ class LobbyManager {
     const player = lobby.players.find(p => p.socketId === socket.id);
     if (!player) return;
     
+    // If game hasn't started yet, just clean up the lobby
+    if (!lobby.session) {
+      // Remove player from lobby
+      lobby.players = lobby.players.filter(p => p.id !== player.id);
+      this.playerToLobby.delete(socket.id);
+      
+      // If lobby is now empty, delete it
+      if (lobby.players.length === 0) {
+        this.lobbies.delete(lobbyId);
+      }
+      
+      console.log(`Player ${player.name} left lobby ${lobbyId} (game not started)`);
+      return;
+    }
+    
     // Set up reconnection timeout (120 seconds)
     const timeout = setTimeout(() => {
       this.handleReconnectTimeout(player.id, lobbyId);
@@ -168,17 +183,17 @@ class LobbyManager {
     player.disconnected = true;
     player.disconnectedAt = Date.now();
     
+    // Pause the game if in progress
+    if (lobby.session) {
+      lobby.session.pause();
+    }
+    
     // Notify other player
     const otherPlayer = lobby.players.find(p => p.id !== player.id);
     if (otherPlayer && !otherPlayer.disconnected) {
       this.io.to(otherPlayer.socketId).emit('opponentDisconnected', {
         reconnectTimeout: 120
       });
-    }
-    
-    // Pause the game if in progress
-    if (lobby.session) {
-      lobby.session.pause();
     }
     
     this.playerToLobby.delete(socket.id);

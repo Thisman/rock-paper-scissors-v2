@@ -162,19 +162,24 @@ class GameSession {
     
     const { pos1, pos2 } = positions;
     
-    // Only allow swapping future cards (not current round card)
-    if (pos1 <= this.currentRound || pos2 <= this.currentRound) {
+    // Positions are relative to remaining cards, need to add currentRound offset
+    const actualPos1 = pos1 + this.currentRound;
+    const actualPos2 = pos2 + this.currentRound;
+    
+    // Only block swapping already played cards
+    if (actualPos1 < this.currentRound || actualPos2 < this.currentRound) {
       this.io.to(player.socketId).emit('swapError', {
-        message: 'Cannot swap cards that have already been played or current round card'
+        message: 'Нельзя менять уже сыгранные карты'
       });
       return;
     }
     
-    if (player.swapCards(pos1, pos2)) {
+    if (player.swapCards(actualPos1, actualPos2)) {
       player.ready = true;
       
+      // Send only remaining cards (from current round onwards)
       this.io.to(player.socketId).emit('swapConfirmed', {
-        sequence: player.sequence,
+        sequence: player.sequence.slice(this.currentRound),
         swapsRemaining: 3 - player.swapsUsed
       });
       
@@ -185,7 +190,7 @@ class GameSession {
       this.checkSwapPhaseComplete();
     } else {
       this.io.to(player.socketId).emit('swapError', {
-        message: 'Invalid swap (must be adjacent cards, max 3 swaps per game)'
+        message: 'Некорректный свап (только соседние карты, макс. 3 за игру)'
       });
     }
   }
@@ -263,6 +268,7 @@ class GameSession {
       const opponent = this.getOpponent(player.id);
       this.io.to(player.socketId).emit('roundResult', {
         ...roundResult,
+        round: this.currentRound + 1,
         yourCard: player.getCardForRound(this.currentRound),
         opponentCard: opponent.getCardForRound(this.currentRound),
         youWon: roundWinner === player.id,
@@ -376,7 +382,7 @@ class GameSession {
     const opponent = this.getOpponent(playerId);
     
     return {
-      phase: this.phase,
+      phase: this.previousPhase || this.phase, // Return actual phase even if paused
       currentRound: this.currentRound,
       yourSequence: player.sequence,
       yourScore: player.score,
@@ -385,7 +391,10 @@ class GameSession {
       opponentSwapsRemaining: 3 - opponent.swapsUsed,
       roundHistory: this.roundHistory,
       timeRemaining: this.timer ? Math.ceil(this.timer.getRemaining()) : 0,
-      upcomingCards: player.sequence.slice(this.currentRound)
+      upcomingCards: player.sequence.slice(this.currentRound),
+      hand: player.hand,
+      playerName: player.name,
+      opponentName: opponent.name
     };
   }
 

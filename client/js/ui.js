@@ -58,11 +58,54 @@ class UIManager {
       reconnectTimer: document.getElementById('reconnect-timer'),
       
       // Toast
-      toast: document.getElementById('toast')
+      toast: document.getElementById('toast'),
+      
+      // Theme
+      themeToggle: document.getElementById('theme-toggle'),
+      themeIcon: document.querySelector('.theme-icon')
     };
     
     this.currentScreen = 'lobby';
     this.timerInterval = null;
+    this.opponentPlayedCards = []; // Track revealed opponent cards
+    
+    // Initialize theme
+    this.initTheme();
+  }
+
+  /**
+   * Initialize theme from localStorage or system preference
+   */
+  initTheme() {
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme) {
+      this.setTheme(savedTheme);
+    } else {
+      // Check system preference
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      this.setTheme(prefersDark ? 'dark' : 'light');
+    }
+  }
+
+  /**
+   * Toggle between light and dark theme
+   */
+  toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    this.setTheme(newTheme);
+  }
+
+  /**
+   * Set the theme
+   */
+  setTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+    
+    if (this.elements.themeIcon) {
+      this.elements.themeIcon.textContent = theme === 'dark' ? '🌙' : '☀️';
+    }
   }
 
   /**
@@ -87,6 +130,35 @@ class UIManager {
     this.elements.displayLobbyCode.textContent = lobbyCode;
     this.elements.createLobbyBtn.disabled = true;
     this.elements.joinLobbyBtn.disabled = true;
+    
+    // Update URL with room code
+    this.updateUrlWithRoom(lobbyCode);
+  }
+
+  /**
+   * Update URL with room ID for sharing
+   */
+  updateUrlWithRoom(roomId) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('room', roomId);
+    window.history.replaceState({}, '', url);
+  }
+
+  /**
+   * Get room ID from URL
+   */
+  getRoomFromUrl() {
+    const url = new URL(window.location.href);
+    return url.searchParams.get('room');
+  }
+
+  /**
+   * Clear room from URL
+   */
+  clearRoomFromUrl() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('room');
+    window.history.replaceState({}, '', url);
   }
 
   /**
@@ -257,18 +329,46 @@ class UIManager {
   }
 
   /**
-   * Render opponent cards (face down)
+   * Render opponent cards (face down, with revealed cards showing)
    */
-  renderOpponentCards(count, currentRound = 0) {
+  renderOpponentCards(count, currentRound = 0, playedCards = []) {
     this.elements.opponentCards.innerHTML = '';
+    
+    // Use stored played cards if not provided
+    const revealedCards = playedCards.length > 0 ? playedCards : this.opponentPlayedCards;
+    
     for (let i = 0; i < count; i++) {
-      const cardEl = document.createElement('div');
-      cardEl.className = 'card card-back';
-      if (i < currentRound) {
-        cardEl.classList.add('used');
+      let cardEl;
+      
+      if (i < revealedCards.length && revealedCards[i]) {
+        // Show revealed card
+        cardEl = this.createCardElement(revealedCards[i], { simple: true });
+        cardEl.classList.add('revealed', 'used');
+      } else {
+        // Show card back
+        cardEl = document.createElement('div');
+        cardEl.className = 'card card-back';
+        if (i < currentRound) {
+          cardEl.classList.add('used');
+        }
       }
+      
       this.elements.opponentCards.appendChild(cardEl);
     }
+  }
+
+  /**
+   * Add opponent's played card to revealed list
+   */
+  addOpponentPlayedCard(card) {
+    this.opponentPlayedCards.push(card);
+  }
+
+  /**
+   * Clear opponent's played cards
+   */
+  clearOpponentPlayedCards() {
+    this.opponentPlayedCards = [];
   }
 
   /**
@@ -475,8 +575,11 @@ class UIManager {
    */
   async copyLobbyCode(code) {
     try {
-      await navigator.clipboard.writeText(code);
-      this.showToast('Код скопирован!');
+      // Copy full URL with room code
+      const url = new URL(window.location.href);
+      url.searchParams.set('room', code);
+      await navigator.clipboard.writeText(url.toString());
+      this.showToast('Ссылка скопирована!');
     } catch (err) {
       this.showToast('Не удалось скопировать');
     }
@@ -492,6 +595,8 @@ class UIManager {
     this.elements.sequenceSlots.innerHTML = '';
     this.elements.handCards.innerHTML = '';
     this.resetBattleCards();
+    this.clearOpponentPlayedCards();
+    this.clearRoomFromUrl();
     this.showScreen('lobby');
   }
 }
