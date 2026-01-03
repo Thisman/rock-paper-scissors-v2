@@ -1,0 +1,256 @@
+/* Card Styles */
+.card {
+  width: 70px;
+  height: 98px;
+  border-radius: var(--radius-md);
+  position: relative;
+  cursor: pointer;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  user-select: none;
+  perspective: 1000px;
+}
+
+.card:hover:not(.card-back):not(.disabled) {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+}
+
+.card.selected {
+  transform: translateY(-8px);
+  box-shadow: 0 0 20px var(--accent-primary);
+}
+
+.card.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.card-inner {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  transition: transform 0.6s;
+  transform-style: preserve-3d;
+}
+
+.card.flipped .card-inner {
+  transform: rotateY(180deg);
+}
+
+.card-face {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-md);
+  backface-visibility: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-md);
+}
+
+.card-front {
+  transform: rotateY(180deg);
+}
+
+/* Card back */
+.card-back,
+.card-face.back {
+  background: var(--card-back);
+  border: 3px solid #3d3d54;
+}
+
+.card-back::before,
+.card-face.back::before {
+  content: '?';
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--text-muted);
+}
+
+.card-back::after,
+.card-face.back::after {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border: 2px dashed var(--text-muted);
+  border-radius: var(--radius-sm);
+  opacity: 0.3;
+}
+
+/* Rock card - Red */
+.card.rock .card-front,
+.card-front.rock {
+  background: linear-gradient(135deg, var(--card-rock) 0%, #c1121f 100%);
+  border: 3px solid #ff6b6b;
+}
+
+.card.rock .card-icon::before,
+.card-front.rock .card-icon::before {
+  content: '🪨';
+}
+
+/* Scissors card - Green */
+.card.scissors .card-front,
+.card-front.scissors {
+  background: linear-gradient(135deg, var(--card-scissors) 0%, #1e6f5c 100%);
+  border: 3px solid #52b788;
+}
+
+.card.scissors .card-icon::before,
+.card-front.scissors .card-icon::before {
+  content: '✂️';
+}
+
+/* Paper card - Blue */
+.card.paper .card-front,
+.card-front.paper {
+  background: linear-gradient(135deg, var(--card-paper) 0%, #1d3557 100%);
+  border: 3px solid #6a9fd4;
+}
+
+.card.paper .card-icon::before,
+.card-front.paper .card-icon::before {
+  content: '📄';
+}
+
+/* Card content */
+.card-icon {
+  font-size: 2rem;
+  margin-bottom: var(--spacing-xs);
+}
+
+.card-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.9;
+}
+
+/* Simple card (no flip animation) */
+.card-simple {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-md);
+}
+
+.card-simple.rock {
+  background: linear-gradient(135deg, var(--card-rock) 0%, #c1121f 100%);
+  border: 3px solid #ff6b6b;
+}
+
+.card-simple.scissors {
+  background: linear-gradient(135deg, var(--card-scissors) 0%, #1e6f5c 100%);
+  border: 3px solid #52b788;
+}
+
+.card-simple.paper {
+  background: linear-gradient(135deg, var(--card-paper) 0%, #1d3557 100%);
+  border: 3px solid #6a9fd4;
+}
+
+/* Dragging states */
+.card.dragging {
+  opacity: 0.7;
+  transform: scale(1.05) rotate(3deg);
+  z-index: 100;
+}
+
+.card.drag-ghost {
+  opacity: 0.3;
+}
+
+/* Small cards for history */
+.card-mini {
+  width: 32px;
+  height: 44px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+}
+
+.card-mini.rock {
+  background: var(--card-rock);
+}
+
+.card-mini.scissors {
+  background: var(--card-scissors);
+}
+
+.card-mini.paper {
+  background: var(--card-paper);
+}
+
+/* Battle card animations */
+.battle-card {
+  animation: cardReveal 0.5s ease;
+}
+
+.battle-card.winner {
+  animation: cardWin 0.8s ease;
+  box-shadow: 0 0 30px var(--accent-warning);
+}
+
+.battle-card.loser {
+  animation: cardLose 0.5s ease forwards;
+}
+
+/* Card in sequence slots */
+.sequence-slot .card {
+  position: absolute;
+}
+
+/* Swap indicator */
+.card.swap-candidate {
+  box-shadow: 0 0 15px var(--accent-secondary);
+  animation: pulse 1s ease infinite;
+}
+
+.swap-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.5rem;
+  color: var(--accent-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  z-index: 10;
+}
+
+.swap-arrow.left {
+  left: -20px;
+}
+
+.swap-arrow.right {
+  right: -20px;
+}
+
+.card:hover .swap-arrow {
+  opacity: 1;
+}
+
+/* Opponent cards */
+.opponent-cards .card {
+  transform: rotate(180deg);
+}
+
+/* Used card overlay */
+.card.used::after {
+  content: '✓';
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  color: var(--text-muted);
+}
+

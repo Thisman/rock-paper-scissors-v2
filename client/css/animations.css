@@ -1,0 +1,343 @@
+/* Keyframe Animations */
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-20px);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.02);
+  }
+}
+
+@keyframes popIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  10%, 30%, 50%, 70%, 90% {
+    transform: translateX(-5px);
+  }
+  20%, 40%, 60%, 80% {
+    transform: translateX(5px);
+  }
+}
+
+@keyframes cardReveal {
+  0% {
+    transform: rotateY(0deg) scale(0.8);
+    opacity: 0;
+  }
+  50% {
+    transform: rotateY(90deg) scale(1.1);
+  }
+  100% {
+    transform: rotateY(180deg) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes cardWin {
+  0% {
+    transform: scale(1);
+  }
+  25% {
+    transform: scale(1.1);
+  }
+  50% {
+    transform: scale(1.15) rotate(5deg);
+  }
+  75% {
+    transform: scale(1.1) rotate(-3deg);
+  }
+  100% {
+    transform: scale(1.05) rotate(0);
+  }
+}
+
+@keyframes cardLose {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.9) translateY(10px);
+    opacity: 0.5;
+  }
+}
+
+@keyframes glowPulse {
+  0%, 100% {
+    box-shadow: 0 0 10px currentColor;
+  }
+  50% {
+    box-shadow: 0 0 30px currentColor, 0 0 50px currentColor;
+  }
+}
+
+@keyframes confetti {
+  0% {
+    transform: translateY(0) rotate(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-100vh) rotate(720deg);
+    opacity: 0;
+  }
+}
+
+@keyframes drawCard {
+  0% {
+    transform: translateY(50px) rotate(-10deg);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0) rotate(0);
+    opacity: 1;
+  }
+}
+
+/* Animation Classes */
+
+.animate-pop-in {
+  animation: popIn 0.3s ease;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.4s ease;
+}
+
+.animate-slide-down {
+  animation: slideDown 0.4s ease;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease;
+}
+
+.animate-shake {
+  animation: shake 0.5s ease;
+}
+
+.animate-bounce {
+  animation: bounce 1s ease infinite;
+}
+
+.animate-pulse {
+  animation: pulse 2s ease infinite;
+}
+
+.animate-glow {
+  animation: glowPulse 2s ease infinite;
+}
+
+/* Card dealing animation */
+.card-deal {
+  animation: drawCard 0.4s ease backwards;
+}
+
+.card-deal:nth-child(1) { animation-delay: 0.05s; }
+.card-deal:nth-child(2) { animation-delay: 0.1s; }
+.card-deal:nth-child(3) { animation-delay: 0.15s; }
+.card-deal:nth-child(4) { animation-delay: 0.2s; }
+.card-deal:nth-child(5) { animation-delay: 0.25s; }
+.card-deal:nth-child(6) { animation-delay: 0.3s; }
+
+/* Staggered entrance */
+.stagger-enter > *:nth-child(1) { animation-delay: 0.05s; }
+.stagger-enter > *:nth-child(2) { animation-delay: 0.1s; }
+.stagger-enter > *:nth-child(3) { animation-delay: 0.15s; }
+.stagger-enter > *:nth-child(4) { animation-delay: 0.2s; }
+.stagger-enter > *:nth-child(5) { animation-delay: 0.25s; }
+.stagger-enter > *:nth-child(6) { animation-delay: 0.3s; }
+
+/* Timer warning */
+.timer-warning .timer-progress {
+  stroke: var(--card-rock);
+  animation: pulse 0.5s ease infinite;
+}
+
+/* Score change animation */
+.score-change {
+  animation: popIn 0.3s ease;
+}
+
+/* Winner celebration */
+.celebrate {
+  position: relative;
+}
+
+.celebrate::before,
+.celebrate::after {
+  content: '🎉';
+  position: absolute;
+  font-size: 3rem;
+  animation: confetti 2s ease-out infinite;
+}
+
+.celebrate::before {
+  left: -50px;
+  animation-delay: 0.2s;
+}
+
+.celebrate::after {
+  right: -50px;
+  animation-delay: 0.4s;
+}
+
+/* Screen transitions */
+.screen-enter {
+  animation: slideUp 0.4s ease;
+}
+
+.screen-exit {
+  animation: fadeIn 0.3s ease reverse;
+}
+
+/* Button press effect */
+.btn:active:not(:disabled) {
+  animation: none;
+  transform: scale(0.98);
+}
+
+/* Swap animation */
+@keyframes swapLeft {
+  0% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(-100%) scale(0.9);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes swapRight {
+  0% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(100%) scale(0.9);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.swap-left {
+  animation: swapLeft 0.3s ease;
+}
+
+.swap-right {
+  animation: swapRight 0.3s ease;
+}
+
+/* VS indicator animation */
+.vs-indicator {
+  animation: pulse 1.5s ease infinite;
+}
+
+/* Round result animations */
+.result-win {
+  color: var(--accent-secondary);
+}
+
+.result-lose {
+  color: var(--card-rock);
+}
+
+.result-draw {
+  color: var(--accent-warning);
+}
+
+/* Loading dots */
+.loading-dots::after {
+  content: '';
+  animation: dots 1.5s steps(4, end) infinite;
+}
+
+@keyframes dots {
+  0%, 20% {
+    content: '';
+  }
+  40% {
+    content: '.';
+  }
+  60% {
+    content: '..';
+  }
+  80%, 100% {
+    content: '...';
+  }
+}
+

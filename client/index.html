@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Камень-Ножницы-Бумага Online</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/cards.css">
+  <link rel="stylesheet" href="css/animations.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Lobby Screen -->
+    <div id="lobby-screen" class="screen active">
+      <div class="lobby-container">
+        <h1 class="game-title">
+          <span class="title-rock">🪨</span>
+          <span class="title-scissors">✂️</span>
+          <span class="title-paper">📄</span>
+          <br>
+          Камень-Ножницы-Бумага
+        </h1>
+        
+        <div class="lobby-card">
+          <div class="name-input-section">
+            <label for="player-name">Ваше имя</label>
+            <input type="text" id="player-name" placeholder="Введите имя..." maxlength="20">
+          </div>
+          
+          <div class="lobby-actions">
+            <button id="create-lobby-btn" class="btn btn-primary">
+              <span class="btn-icon">+</span>
+              Создать комнату
+            </button>
+            
+            <div class="divider">
+              <span>или</span>
+            </div>
+            
+            <div class="join-section">
+              <input type="text" id="lobby-code" placeholder="Код комнаты" maxlength="6">
+              <button id="join-lobby-btn" class="btn btn-secondary">
+                Присоединиться
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <div id="waiting-section" class="waiting-section hidden">
+          <div class="waiting-card">
+            <div class="loader"></div>
+            <p>Ожидание соперника...</p>
+            <div class="lobby-code-display">
+              Код комнаты: <strong id="display-lobby-code">------</strong>
+              <button id="copy-code-btn" class="btn-icon-only" title="Копировать">📋</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sequence Setup Screen -->
+    <div id="sequence-screen" class="screen">
+      <div class="game-header">
+        <div class="timer-container">
+          <div class="timer-circle">
+            <svg viewBox="0 0 100 100">
+              <circle class="timer-bg" cx="50" cy="50" r="45"/>
+              <circle class="timer-progress" cx="50" cy="50" r="45"/>
+            </svg>
+            <span id="sequence-timer" class="timer-text">60</span>
+          </div>
+          <span class="timer-label">Расставьте карты</span>
+        </div>
+      </div>
+      
+      <div class="sequence-container">
+        <p class="instruction">Перетащите карты, чтобы расставить их в нужном порядке. Первая карта будет сыграна в 1-м раунде.</p>
+        
+        <div class="sequence-slots" id="sequence-slots">
+          <!-- Slots will be populated by JS -->
+        </div>
+        
+        <div class="hand-cards" id="hand-cards">
+          <!-- Cards will be populated by JS -->
+        </div>
+        
+        <button id="confirm-sequence-btn" class="btn btn-primary btn-large" disabled>
+          Подтвердить расстановку
+        </button>
+      </div>
+    </div>
+
+    <!-- Game Screen -->
+    <div id="game-screen" class="screen">
+      <div class="game-header">
+        <div class="player-info opponent-info">
+          <span id="opponent-name" class="player-name">Соперник</span>
+          <span id="opponent-score" class="player-score">0</span>
+          <div class="swap-indicator">
+            <span id="opponent-swaps">⚡⚡⚡</span>
+          </div>
+        </div>
+        
+        <div class="round-info">
+          <div class="timer-container small">
+            <div class="timer-circle">
+              <svg viewBox="0 0 100 100">
+                <circle class="timer-bg" cx="50" cy="50" r="45"/>
+                <circle class="timer-progress" cx="50" cy="50" r="45"/>
+              </svg>
+              <span id="game-timer" class="timer-text">20</span>
+            </div>
+          </div>
+          <span class="round-label">Раунд <span id="current-round">1</span>/6</span>
+        </div>
+        
+        <div class="player-info self-info">
+          <span id="player-score" class="player-score">0</span>
+          <span id="player-name-display" class="player-name">Вы</span>
+          <div class="swap-indicator">
+            <span id="player-swaps">⚡⚡⚡</span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="battlefield">
+        <!-- Opponent's area -->
+        <div class="opponent-area">
+          <div class="card-row opponent-cards" id="opponent-cards">
+            <!-- Opponent cards (face down) -->
+          </div>
+        </div>
+        
+        <!-- Center battle area -->
+        <div class="battle-center">
+          <div class="battle-card-slot opponent-battle" id="opponent-battle-card">
+            <div class="card card-back"></div>
+          </div>
+          <div class="vs-indicator">VS</div>
+          <div class="battle-card-slot player-battle" id="player-battle-card">
+            <div class="card card-back"></div>
+          </div>
+        </div>
+        
+        <!-- Player's area -->
+        <div class="player-area">
+          <div class="card-row player-cards" id="player-cards">
+            <!-- Player cards -->
+          </div>
+        </div>
+      </div>
+      
+      <div class="action-bar">
+        <button id="swap-btn" class="btn btn-action">
+          🔄 Свап
+        </button>
+        <button id="skip-btn" class="btn btn-secondary">
+          ⏭ Пропустить
+        </button>
+      </div>
+      
+      <!-- Round result overlay -->
+      <div id="round-result" class="result-overlay hidden">
+        <div class="result-content">
+          <h2 id="result-title">Результат</h2>
+          <p id="result-message"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="gameover-screen" class="screen">
+      <div class="gameover-container">
+        <div id="gameover-icon" class="gameover-icon">🏆</div>
+        <h1 id="gameover-title">Победа!</h1>
+        <p id="gameover-score" class="gameover-score">3 : 2</p>
+        <p id="gameover-message" class="gameover-message"></p>
+        
+        <div class="round-history" id="round-history">
+          <!-- Round history will be populated -->
+        </div>
+        
+        <button id="play-again-btn" class="btn btn-primary btn-large">
+          Играть снова
+        </button>
+      </div>
+    </div>
+
+    <!-- Disconnection overlay -->
+    <div id="disconnect-overlay" class="overlay hidden">
+      <div class="overlay-content">
+        <div class="loader"></div>
+        <h2>Соперник отключился</h2>
+        <p>Ожидание переподключения: <span id="reconnect-timer">120</span>с</p>
+      </div>
+    </div>
+
+    <!-- Notification toast -->
+    <div id="toast" class="toast hidden"></div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="js/socket.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/dragdrop.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
+
