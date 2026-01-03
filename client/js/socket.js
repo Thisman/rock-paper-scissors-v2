@@ -58,6 +58,9 @@ class SocketHandler {
     this.socket.on('lobbyCreated', (data) => this.emit('lobbyCreated', data));
     this.socket.on('lobbyJoined', (data) => this.emit('lobbyJoined', data));
     this.socket.on('playerJoined', (data) => this.emit('playerJoined', data));
+    this.socket.on('cardsPreview', (data) => this.emit('cardsPreview', data));
+    this.socket.on('previewTimerUpdate', (data) => this.emit('previewTimerUpdate', data));
+    this.socket.on('opponentPreviewReady', () => this.emit('opponentPreviewReady'));
     this.socket.on('gameStart', (data) => this.emit('gameStart', data));
     this.socket.on('sequenceConfirmed', () => this.emit('sequenceConfirmed'));
     this.socket.on('roundStart', (data) => this.emit('roundStart', data));
@@ -110,17 +113,38 @@ class SocketHandler {
   }
 
   /**
+   * Get or create persistent player ID
+   */
+  getOrCreatePlayerId() {
+    let playerId = localStorage.getItem('persistentPlayerId');
+    if (!playerId) {
+      playerId = this.generatePlayerId();
+      localStorage.setItem('persistentPlayerId', playerId);
+    }
+    return playerId;
+  }
+
+  /**
+   * Generate a unique player ID
+   */
+  generatePlayerId() {
+    return 'player_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now().toString(36);
+  }
+
+  /**
    * Create a new lobby
    */
   createLobby(playerName) {
-    this.socket.emit('createLobby', playerName);
+    const playerId = this.getOrCreatePlayerId();
+    this.socket.emit('createLobby', { playerName, playerId });
   }
 
   /**
    * Join an existing lobby
    */
   joinLobby(lobbyId, playerName) {
-    this.socket.emit('joinLobby', { lobbyId: lobbyId.toUpperCase(), playerName });
+    const playerId = this.getOrCreatePlayerId();
+    this.socket.emit('joinLobby', { lobbyId: lobbyId.toUpperCase(), playerName, playerId });
   }
 
   /**

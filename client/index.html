@@ -12,6 +12,14 @@
   <link rel="stylesheet" href="css/animations.css">
 </head>
 <body>
+  <!-- Loading Screen -->
+  <div id="loading-screen" class="loading-screen">
+    <div class="loading-content">
+      <div class="loader large"></div>
+      <p>Подключение к серверу...</p>
+    </div>
+  </div>
+
   <!-- Theme toggle -->
   <button id="theme-toggle" class="theme-toggle" title="Сменить тему">
     <span class="theme-icon">🌙</span>
@@ -19,7 +27,7 @@
 
   <div class="app-container">
     <!-- Lobby Screen -->
-    <div id="lobby-screen" class="screen active">
+    <div id="lobby-screen" class="screen">
       <div class="lobby-container">
         <h1 class="game-title">
           <span class="title-rock">🪨</span>
@@ -66,8 +74,48 @@
               <input type="text" id="share-link" class="share-link-input" readonly>
               <button id="copy-code-btn" class="btn-icon-only" title="Копировать">📋</button>
             </div>
+            <button id="leave-lobby-btn" class="btn btn-secondary btn-small">Покинуть</button>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Cards Preview Screen -->
+    <div id="preview-screen" class="screen">
+      <div class="game-header">
+        <div class="timer-container">
+          <div class="timer-circle">
+            <svg viewBox="0 0 100 100">
+              <circle class="timer-bg" cx="50" cy="50" r="45"/>
+              <circle class="timer-progress" cx="50" cy="50" r="45"/>
+            </svg>
+            <span id="preview-timer" class="timer-text">10</span>
+          </div>
+          <span class="timer-label">Изучите карты</span>
+        </div>
+      </div>
+      
+      <div class="preview-container">
+        <p class="instruction">Изучите карты соперника. Скоро начнётся сбор вашей руки.</p>
+        
+        <div class="preview-cards-section">
+          <div class="preview-player-area">
+            <span class="preview-label" id="preview-opponent-label">Карты соперника</span>
+            <div class="card-row preview-cards" id="preview-opponent-cards"></div>
+          </div>
+          
+          <div class="preview-player-area">
+            <span class="preview-label" id="preview-player-label">Ваши карты</span>
+            <div class="card-row preview-cards" id="preview-player-cards"></div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="action-bar fixed-footer">
+        <button id="preview-ready-btn" class="btn btn-primary btn-large">
+          ✓ Готов
+        </button>
+        <p id="preview-status" class="preview-status"></p>
       </div>
     </div>
 
@@ -96,7 +144,9 @@
         <div class="hand-cards" id="hand-cards">
           <!-- Cards will be populated by JS -->
         </div>
-        
+      </div>
+      
+      <div class="action-bar fixed-footer">
         <button id="confirm-sequence-btn" class="btn btn-primary btn-large" disabled>
           Подтвердить расстановку
         </button>
@@ -106,11 +156,11 @@
     <!-- Game Screen -->
     <div id="game-screen" class="screen">
       <div class="game-header">
-        <div class="player-info opponent-info">
-          <span id="opponent-name" class="player-name">Соперник</span>
-          <span id="opponent-score" class="player-score">0</span>
+        <div class="player-info self-info">
+          <span id="player-name-display" class="player-name">Вы</span>
+          <span id="player-score" class="player-score">0</span>
           <div class="swap-indicator">
-            <span id="opponent-swaps">⚡⚡⚡</span>
+            <span id="player-swaps">⚡⚡⚡</span>
           </div>
         </div>
         
@@ -127,11 +177,11 @@
           <span class="round-label">Раунд <span id="current-round">1</span>/6</span>
         </div>
         
-        <div class="player-info self-info">
-          <span id="player-score" class="player-score">0</span>
-          <span id="player-name-display" class="player-name">Вы</span>
+        <div class="player-info opponent-info">
+          <span id="opponent-name" class="player-name">Соперник</span>
+          <span id="opponent-score" class="player-score">0</span>
           <div class="swap-indicator">
-            <span id="player-swaps">⚡⚡⚡</span>
+            <span id="opponent-swaps">⚡⚡⚡</span>
           </div>
         </div>
       </div>
@@ -146,11 +196,11 @@
         
         <!-- Center battle area -->
         <div class="battle-center">
-          <div class="battle-card-slot opponent-battle" id="opponent-battle-card">
+          <div class="battle-card-slot player-battle" id="player-battle-card">
             <div class="card card-back"></div>
           </div>
           <div class="vs-indicator">VS</div>
-          <div class="battle-card-slot player-battle" id="player-battle-card">
+          <div class="battle-card-slot opponent-battle" id="opponent-battle-card">
             <div class="card card-back"></div>
           </div>
         </div>
@@ -163,7 +213,7 @@
         </div>
       </div>
       
-      <div class="action-bar">
+      <div class="action-bar fixed-footer">
         <button id="swap-btn" class="btn btn-action">
           🔄 Свап
         </button>
@@ -176,6 +226,17 @@
       <div id="round-result" class="result-overlay hidden">
         <div class="result-content">
           <h2 id="result-title">Результат</h2>
+          <div class="result-cards">
+            <div class="result-card-container">
+              <span id="result-player-name" class="result-card-label">Вы</span>
+              <div id="result-player-card" class="result-card-slot"></div>
+            </div>
+            <span class="result-vs">VS</span>
+            <div class="result-card-container">
+              <span id="result-opponent-name" class="result-card-label">Соперник</span>
+              <div id="result-opponent-card" class="result-card-slot"></div>
+            </div>
+          </div>
           <p id="result-message"></p>
           <p id="result-wait-text" class="result-wait-text">Ожидание соперника... <span id="result-countdown">5</span>с</p>
           <button id="continue-btn" class="btn btn-primary">Продолжить</button>
@@ -207,11 +268,18 @@
         <div class="loader"></div>
         <h2>Соперник отключился</h2>
         <p>Ожидание переподключения: <span id="reconnect-timer">120</span>с</p>
+        <button id="leave-game-btn" class="btn btn-secondary btn-small">Покинуть игру</button>
       </div>
     </div>
 
     <!-- Notification toast -->
     <div id="toast" class="toast hidden"></div>
+    
+    <!-- Room and User ID display -->
+    <div class="id-display-container">
+      <div id="room-id-display" class="room-id-display"></div>
+      <div id="user-id-display" class="user-id-display"></div>
+    </div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>

@@ -3,6 +3,7 @@ const { determineWinner, getWinExplanation, determineGameWinner } = require('./r
 const Timer = require('../utils/Timer');
 
 const TIMERS = {
+  PREVIEW: 10,   // 10 seconds to view cards
   SEQUENCE: 60,  // 60 seconds to set sequence
   SWAP: 20,      // 20 seconds for swap decision
   CONTINUE: 5    // 5 seconds before next round (or both players click continue)
@@ -10,6 +11,7 @@ const TIMERS = {
 
 const GamePhase = {
   WAITING: 'waiting',
+  PREVIEW: 'preview',
   SEQUENCE: 'sequence',
   ROUND_START: 'round_start',
   SWAP: 'swap',
@@ -31,10 +33,11 @@ class GameSession {
     this.timer = null;
     this.paused = false;
     this.continueReady = new Set(); // Track players who clicked continue
+    this.previewReady = new Set(); // Track players who clicked ready in preview
   }
 
   /**
-   * Start the game session
+   * Start the game session - first show preview
    */
   start() {
     // Deal cards to both players
@@ -42,9 +45,76 @@ class GameSession {
       player.hand = Deck.deal();
     });
     
-    this.phase = GamePhase.SEQUENCE;
+    this.phase = GamePhase.PREVIEW;
     
-    // Emit game start event with dealt cards
+    // Emit cards preview event - both players see each other's cards
+    this.players.forEach(player => {
+      const opponent = this.getOpponent(player.id);
+      this.io.to(player.socketId).emit('cardsPreview', {
+        yourCards: player.hand,
+        opponentCards: opponent.hand,
+        opponentName: opponent.name,
+        timeLimit: TIMERS.PREVIEW
+      });
+    });
+    
+    // Start preview timer
+    this.startPreviewTimer();
+  }
+
+  /**
+   * Start timer for preview phase
+   */
+  startPreviewTimer() {
+    this.timer = new Timer(
+      TIMERS.PREVIEW,
+      () => this.onPreviewTimeout(),
+      (remaining) => this.broadcastPreviewTimer(remaining)
+    );
+    this.timer.start();
+  }
+
+  /**
+   * Handle preview timeout - move to sequence phase
+   */
+  onPreviewTimeout() {
+    this.startSequencePhase();
+  }
+
+  /**
+   * Handle player clicking ready in preview
+   */
+  handlePreviewReady(playerId) {
+    if (this.phase !== GamePhase.PREVIEW) return;
+    
+    this.previewReady.add(playerId);
+    
+    // Notify opponent
+    const opponent = this.getOpponent(playerId);
+    this.io.to(opponent.socketId).emit('opponentPreviewReady');
+    
+    // If both players ready, start sequence phase
+    if (this.previewReady.size >= 2) {
+      this.timer.clear();
+      this.startSequencePhase();
+    }
+  }
+
+  /**
+   * Broadcast preview timer update
+   */
+  broadcastPreviewTimer(remaining) {
+    this.broadcast('previewTimerUpdate', { remaining });
+  }
+
+  /**
+   * Start the sequence setup phase
+   */
+  startSequencePhase() {
+    this.phase = GamePhase.SEQUENCE;
+    this.previewReady.clear();
+    
+    // Emit game start event for sequence setup
     this.players.forEach(player => {
       this.io.to(player.socketId).emit('gameStart', {
         hand: player.hand,
@@ -276,6 +346,7 @@ class GameSession {
         yourScore: player.score,
         opponentScore: opponent.score,
         yourSwapsRemaining: 3 - player.swapsUsed,
+        opponentSwapsRemaining: 3 - opponent.swapsUsed,
         upcomingCards: player.sequence.slice(this.currentRound + 1)
       });
     });
@@ -429,6 +500,7 @@ class GameSession {
     const opponent = this.getOpponent(playerId);
     
     return {
+      lobbyId: this.lobbyId,
       phase: this.previousPhase || this.phase, // Return actual phase even if paused
       currentRound: this.currentRound,
       yourSequence: player.sequence,

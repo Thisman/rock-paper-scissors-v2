@@ -36,10 +36,15 @@ io.on('connection', (socket) => {
   });
   
   // Join an existing lobby
-  socket.on('joinLobby', ({ lobbyId, playerName }) => {
-    lobbyManager.joinLobby(socket, lobbyId, playerName);
+  socket.on('joinLobby', ({ lobbyId, playerName, playerId }) => {
+    lobbyManager.joinLobby(socket, lobbyId, playerName, playerId);
   });
   
+  // Player is ready after preview
+  socket.on('previewReady', () => {
+    lobbyManager.handlePreviewReady(socket);
+  });
+
   // Player sets their card sequence
   socket.on('setSequence', (sequence) => {
     lobbyManager.handleSetSequence(socket, sequence);
@@ -58,6 +63,11 @@ io.on('connection', (socket) => {
   // Player continues to next round
   socket.on('continueRound', () => {
     lobbyManager.handleContinueRound(socket);
+  });
+  
+  // Player leaves lobby
+  socket.on('leaveLobby', () => {
+    lobbyManager.handleLeaveLobby(socket);
   });
   
   // Handle disconnection

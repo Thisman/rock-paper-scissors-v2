@@ -5,12 +5,16 @@ class UIManager {
   constructor() {
     this.screens = {
       lobby: document.getElementById('lobby-screen'),
+      preview: document.getElementById('preview-screen'),
       sequence: document.getElementById('sequence-screen'),
       game: document.getElementById('game-screen'),
       gameover: document.getElementById('gameover-screen')
     };
     
     this.elements = {
+      // Loading
+      loadingScreen: document.getElementById('loading-screen'),
+      
       // Lobby
       playerNameInput: document.getElementById('player-name'),
       createLobbyBtn: document.getElementById('create-lobby-btn'),
@@ -19,6 +23,15 @@ class UIManager {
       waitingSection: document.getElementById('waiting-section'),
       displayLobbyCode: document.getElementById('display-lobby-code'),
       copyCodeBtn: document.getElementById('copy-code-btn'),
+      
+      // Preview
+      previewTimer: document.getElementById('preview-timer'),
+      previewOpponentCards: document.getElementById('preview-opponent-cards'),
+      previewPlayerCards: document.getElementById('preview-player-cards'),
+      previewOpponentLabel: document.getElementById('preview-opponent-label'),
+      previewPlayerLabel: document.getElementById('preview-player-label'),
+      previewReadyBtn: document.getElementById('preview-ready-btn'),
+      previewStatus: document.getElementById('preview-status'),
       
       // Sequence
       sequenceSlots: document.getElementById('sequence-slots'),
@@ -68,7 +81,23 @@ class UIManager {
       themeIcon: document.querySelector('.theme-icon'),
       
       // Share link
-      shareLink: document.getElementById('share-link')
+      shareLink: document.getElementById('share-link'),
+      
+      // Leave lobby
+      leaveLobbyBtn: document.getElementById('leave-lobby-btn'),
+      
+      // Leave game during disconnect
+      leaveGameBtn: document.getElementById('leave-game-btn'),
+      
+      // Result cards
+      resultPlayerName: document.getElementById('result-player-name'),
+      resultOpponentName: document.getElementById('result-opponent-name'),
+      resultPlayerCard: document.getElementById('result-player-card'),
+      resultOpponentCard: document.getElementById('result-opponent-card'),
+      
+      // Room and User ID
+      roomIdDisplay: document.getElementById('room-id-display'),
+      userIdDisplay: document.getElementById('user-id-display')
     };
     
     this.currentScreen = 'lobby';
@@ -78,6 +107,77 @@ class UIManager {
     
     // Initialize theme
     this.initTheme();
+    
+    // Load saved name
+    this.loadSavedName();
+  }
+
+  /**
+   * Load saved player name from localStorage
+   */
+  loadSavedName() {
+    const savedName = localStorage.getItem('playerName');
+    if (savedName) {
+      this.elements.playerNameInput.value = savedName;
+    }
+  }
+
+  /**
+   * Save player name to localStorage
+   */
+  savePlayerName(name) {
+    if (name) {
+      localStorage.setItem('playerName', name);
+    }
+  }
+
+  /**
+   * Validate player name - show error if empty
+   */
+  validatePlayerName() {
+    const name = this.elements.playerNameInput.value.trim();
+    if (!name) {
+      this.elements.playerNameInput.classList.add('error');
+      this.elements.playerNameInput.focus();
+      this.showToast('Введите ваше имя');
+      setTimeout(() => {
+        this.elements.playerNameInput.classList.remove('error');
+      }, 400);
+      return false;
+    }
+    this.savePlayerName(name);
+    return true;
+  }
+
+  /**
+   * Display user ID at the bottom of screen
+   */
+  showUserId(playerId) {
+    // Use persistent player ID if available
+    const displayId = playerId || localStorage.getItem('persistentPlayerId');
+    if (displayId) {
+      // Show shortened version for display
+      const shortId = displayId.length > 20 ? displayId.substring(0, 20) + '...' : displayId;
+      this.elements.userIdDisplay.textContent = `ID: ${shortId}`;
+    }
+  }
+
+  /**
+   * Display room ID above user ID
+   */
+  showRoomId(roomId) {
+    if (roomId) {
+      this.elements.roomIdDisplay.textContent = `Комната: ${roomId}`;
+    } else {
+      this.elements.roomIdDisplay.textContent = '';
+    }
+  }
+
+  /**
+   * Load saved user ID
+   */
+  loadSavedUserId() {
+    return localStorage.getItem('persistentPlayerId');
   }
 
   /**
@@ -127,6 +227,74 @@ class UIManager {
       this.screens[screenName].classList.add('active');
       this.currentScreen = screenName;
     }
+  }
+
+  /**
+   * Hide loading screen
+   */
+  hideLoadingScreen() {
+    if (this.elements.loadingScreen) {
+      this.elements.loadingScreen.classList.add('hidden');
+    }
+  }
+
+  /**
+   * Show loading screen
+   */
+  showLoadingScreen() {
+    if (this.elements.loadingScreen) {
+      this.elements.loadingScreen.classList.remove('hidden');
+    }
+  }
+
+  /**
+   * Setup preview screen with both players' cards
+   */
+  setupPreviewScreen(playerName, opponentName, playerCards, opponentCards) {
+    // Set labels
+    this.elements.previewPlayerLabel.textContent = `Ваши карты (${playerName})`;
+    this.elements.previewOpponentLabel.textContent = `Карты соперника (${opponentName})`;
+    
+    // Render player cards
+    this.elements.previewPlayerCards.innerHTML = '';
+    playerCards.forEach(card => {
+      const cardEl = this.createCardElement(card, { simple: true });
+      this.elements.previewPlayerCards.appendChild(cardEl);
+    });
+    
+    // Render opponent cards
+    this.elements.previewOpponentCards.innerHTML = '';
+    opponentCards.forEach(card => {
+      const cardEl = this.createCardElement(card, { simple: true });
+      this.elements.previewOpponentCards.appendChild(cardEl);
+    });
+    
+    // Reset ready button
+    this.elements.previewReadyBtn.disabled = false;
+    this.elements.previewReadyBtn.textContent = '✓ Готов';
+    this.elements.previewStatus.textContent = '';
+  }
+
+  /**
+   * Set preview ready button to waiting state
+   */
+  setPreviewReadyWaiting(waiting) {
+    if (waiting) {
+      this.elements.previewReadyBtn.disabled = true;
+      this.elements.previewReadyBtn.textContent = 'Ожидание...';
+      this.elements.previewStatus.textContent = 'Ожидание готовности соперника...';
+    } else {
+      this.elements.previewReadyBtn.disabled = false;
+      this.elements.previewReadyBtn.textContent = '✓ Готов';
+      this.elements.previewStatus.textContent = '';
+    }
+  }
+
+  /**
+   * Show opponent ready status in preview
+   */
+  showPreviewOpponentReady() {
+    this.elements.previewStatus.textContent = 'Соперник готов!';
   }
 
   /**
@@ -487,17 +655,36 @@ class UIManager {
   }
 
   /**
-   * Reset battle cards
+   * Reset battle cards - show current round's player card, opponent card hidden
    */
-  resetBattleCards() {
-    this.elements.playerBattleCard.innerHTML = '<div class="card card-back"></div>';
+  resetBattleCards(currentPlayerCard = null) {
+    if (currentPlayerCard) {
+      this.elements.playerBattleCard.innerHTML = '';
+      const cardEl = this.createCardElement(currentPlayerCard, { simple: true });
+      cardEl.classList.add('battle-card');
+      this.elements.playerBattleCard.appendChild(cardEl);
+    } else {
+      this.elements.playerBattleCard.innerHTML = '<div class="card card-back"></div>';
+    }
     this.elements.opponentBattleCard.innerHTML = '<div class="card card-back"></div>';
+  }
+
+  /**
+   * Update player's battle card (after swap)
+   */
+  updatePlayerBattleCard(card) {
+    if (card) {
+      this.elements.playerBattleCard.innerHTML = '';
+      const cardEl = this.createCardElement(card, { simple: true });
+      cardEl.classList.add('battle-card');
+      this.elements.playerBattleCard.appendChild(cardEl);
+    }
   }
 
   /**
    * Show round result overlay with continue button
    */
-  showRoundResult(title, message, type = 'draw') {
+  showRoundResult(title, message, type = 'draw', playerCard = null, opponentCard = null, playerName = 'Вы', opponentName = 'Соперник') {
     this.elements.resultTitle.textContent = title;
     this.elements.resultTitle.className = `result-${type}`;
     this.elements.resultMessage.textContent = message;
@@ -505,6 +692,28 @@ class UIManager {
     this.elements.continueBtn.classList.remove('waiting');
     this.elements.continueBtn.textContent = 'Продолжить';
     this.elements.resultWaitText.textContent = 'Ожидание соперника... 5с';
+    
+    // Show player names
+    this.elements.resultPlayerName.textContent = playerName;
+    this.elements.resultOpponentName.textContent = opponentName;
+    
+    // Show cards
+    if (playerCard) {
+      this.elements.resultPlayerCard.innerHTML = '';
+      const cardEl = this.createCardElement(playerCard, { simple: true });
+      if (type === 'win') cardEl.classList.add('winner');
+      if (type === 'lose') cardEl.classList.add('loser');
+      this.elements.resultPlayerCard.appendChild(cardEl);
+    }
+    
+    if (opponentCard) {
+      this.elements.resultOpponentCard.innerHTML = '';
+      const cardEl = this.createCardElement(opponentCard, { simple: true });
+      if (type === 'lose') cardEl.classList.add('winner');
+      if (type === 'win') cardEl.classList.add('loser');
+      this.elements.resultOpponentCard.appendChild(cardEl);
+    }
+    
     this.elements.roundResult.classList.remove('hidden');
     
     // Don't auto-hide - server will trigger next round
@@ -684,7 +893,7 @@ class UIManager {
    */
   reset() {
     this.hideWaiting();
-    this.elements.playerNameInput.value = '';
+    // Don't clear player name - it should persist
     this.elements.lobbyCodeInput.value = '';
     this.elements.sequenceSlots.innerHTML = '';
     this.elements.handCards.innerHTML = '';

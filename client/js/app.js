@@ -18,8 +18,22 @@
     // Bind UI events
     bindEvents();
     
-    // Check URL for room code
-    game.checkUrlForRoom();
+    // Handle connection events for loading screen
+    socketHandler.on('connected', () => {
+      ui.hideLoadingScreen();
+      // Show lobby screen if not reconnecting
+      if (game.state.phase === 'lobby') {
+        ui.showScreen('lobby');
+      }
+      // Check URL for room code after connection
+      game.checkUrlForRoom();
+    });
+    
+    // Load and display saved user ID
+    const savedId = ui.loadSavedUserId();
+    if (savedId) {
+      ui.showUserId(savedId);
+    }
     
     console.log('Rock-Paper-Scissors Online initialized');
   }
@@ -46,6 +60,16 @@
       ui.copyLobbyLink();
     });
 
+    // Leave lobby button
+    ui.elements.leaveLobbyBtn.addEventListener('click', () => {
+      game.leaveLobby();
+    });
+
+    // Leave game button (during disconnect)
+    ui.elements.leaveGameBtn.addEventListener('click', () => {
+      game.leaveLobby();
+    });
+
     // Enter key support for inputs
     ui.elements.playerNameInput.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') {
@@ -62,6 +86,11 @@
     // Auto-uppercase lobby code
     ui.elements.lobbyCodeInput.addEventListener('input', (e) => {
       e.target.value = e.target.value.toUpperCase();
+    });
+
+    // Preview ready button
+    ui.elements.previewReadyBtn.addEventListener('click', () => {
+      game.previewReady();
     });
 
     // Sequence confirmation

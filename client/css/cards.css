@@ -286,10 +286,29 @@
 .card.swap-adjacent {
   box-shadow: 0 0 15px var(--accent-secondary);
   animation: pulse 1s ease infinite;
+  cursor: pointer;
+}
+
+.card.swap-adjacent:hover {
+  transform: translateY(-8px);
+}
+
+/* Cards not available for swap should not react to hover */
+.card.used,
+.card.swap-unavailable {
+  pointer-events: none;
 }
 
 .card.swap-unavailable {
   opacity: 0.5;
+}
+
+/* Reset hover effect for cards during swap mode (only swap-candidate and swap-adjacent react) */
+#player-cards.swap-mode .card:not(.swap-candidate):not(.swap-adjacent):not(.selected) {
   pointer-events: none;
+}
+
+#player-cards.swap-mode .card:not(.swap-candidate):not(.swap-adjacent):not(.selected):hover {
+  transform: none;
 }
 

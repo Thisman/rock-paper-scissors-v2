@@ -42,6 +42,9 @@ class GameManager {
       .on('lobbyCreated', (data) => this.onLobbyCreated(data))
       .on('lobbyJoined', (data) => this.onLobbyJoined(data))
       .on('playerJoined', (data) => this.onPlayerJoined(data))
+      .on('cardsPreview', (data) => this.onCardsPreview(data))
+      .on('previewTimerUpdate', (data) => this.onPreviewTimerUpdate(data))
+      .on('opponentPreviewReady', () => this.onOpponentPreviewReady())
       .on('gameStart', (data) => this.onGameStart(data))
       .on('sequenceConfirmed', () => this.onSequenceConfirmed())
       .on('roundStart', (data) => this.onRoundStart(data))
@@ -64,6 +67,8 @@ class GameManager {
    * Create a new lobby
    */
   createLobby() {
+    if (!ui.validatePlayerName()) return;
+    
     this.state.playerName = ui.getPlayerName();
     socketHandler.createLobby(this.state.playerName);
   }
@@ -72,6 +77,8 @@ class GameManager {
    * Join an existing lobby
    */
   joinLobby() {
+    if (!ui.validatePlayerName()) return;
+    
     const code = ui.getLobbyCode();
     if (!code || code.length !== 6) {
       ui.showToast('Введите 6-значный код комнаты');
@@ -91,6 +98,9 @@ class GameManager {
     socketHandler.saveSession(data.lobbyId, data.playerId);
     
     ui.showWaiting(data.lobbyId);
+    ui.updateUrlWithRoom(data.lobbyId);
+    ui.showUserId(data.playerId);
+    ui.showRoomId(data.lobbyId);
   }
 
   /**
@@ -104,6 +114,8 @@ class GameManager {
     
     // Update URL for second player too
     ui.updateUrlWithRoom(data.lobbyId);
+    ui.showUserId(data.playerId);
+    ui.showRoomId(data.lobbyId);
     
     ui.showToast(`Подключились к игре против ${data.opponentName}`);
   }
@@ -118,14 +130,67 @@ class GameManager {
   }
 
   /**
-   * Handle game start event
+   * Handle cards preview event (both players see each other's cards)
+   */
+  onCardsPreview(data) {
+    this.state.phase = 'preview';
+    this.state.hand = data.yourCards;
+    this.state.opponentCards = data.opponentCards;
+    this.state.opponentName = data.opponentName || this.state.opponentName;
+    this.maxPreviewTime = data.timeLimit;
+    
+    // Set initial sequence to hand order
+    this.state.sequence = [...data.yourCards];
+    
+    // Setup and show preview screen
+    ui.setupPreviewScreen(
+      this.state.playerName, 
+      this.state.opponentName, 
+      data.yourCards, 
+      data.opponentCards
+    );
+    ui.updateTimer('preview-timer', data.timeLimit, this.maxPreviewTime);
+    ui.showScreen('preview');
+  }
+
+  /**
+   * Handle preview timer update
+   */
+  onPreviewTimerUpdate(data) {
+    ui.updateTimer('preview-timer', data.remaining, this.maxPreviewTime);
+  }
+
+  /**
+   * Handle opponent ready in preview
+   */
+  onOpponentPreviewReady() {
+    ui.showPreviewOpponentReady();
+  }
+
+  /**
+   * Player clicks ready on preview screen
+   */
+  previewReady() {
+    socketHandler.socket.emit('previewReady');
+    ui.setPreviewReadyWaiting(true);
+  }
+
+  /**
+   * Handle game start event (sequence setup phase)
    */
   onGameStart(data) {
     this.state.phase = 'sequence';
-    this.state.hand = data.hand;
+    // Use hand from preview if available, otherwise from this event
+    const hand = this.state.hand && this.state.hand.length > 0 ? this.state.hand : data.hand;
+    this.state.hand = hand;
+    // Set initial sequence to hand order (will be used if timeout)
+    this.state.sequence = [...hand];
     this.state.opponentName = data.opponentName || this.state.opponentName;
     this.state.sequenceTimer = data.timeLimit;
     this.maxSequenceTime = data.timeLimit;
+    // Reset swaps for new game
+    this.state.swapsRemaining = 3;
+    this.state.opponentSwapsRemaining = 3;
     
     // Clear played cards for new game
     ui.clearOpponentPlayedCards();
@@ -133,12 +198,12 @@ class GameManager {
     
     // Set up sequence screen
     ui.createSequenceSlots(6);
-    ui.renderHandCards(data.hand);
+    ui.renderHandCards(hand);
     ui.updateTimer('sequence-timer', data.timeLimit, this.maxSequenceTime);
     ui.showScreen('sequence');
     
     // Initialize drag and drop
-    dragDrop.init(data.hand, (sequence) => this.onSequenceChange(sequence));
+    dragDrop.init(hand, (sequence) => this.onSequenceChange(sequence));
   }
 
   /**
@@ -199,9 +264,11 @@ class GameManager {
     // Show all remaining cards (including current round's card at index 0)
     ui.renderPlayerCards(this.state.sequence, 0);
     ui.renderOpponentCards(6, data.round - 1);
-    ui.resetBattleCards();
+    // Show current round's card in battle area
+    const currentCard = this.state.sequence[0];
+    ui.resetBattleCards(currentCard);
     ui.setActionsEnabled(this.state.swapsRemaining > 0);
-    ui.updateSwaps(this.state.swapsRemaining);
+    ui.updateSwaps(this.state.swapsRemaining, this.state.opponentSwapsRemaining);
     ui.updateSwapButtonState(this.state.swapsRemaining);
     
     this.state.swapMode = false;
@@ -230,6 +297,9 @@ class GameManager {
     
     this.state.swapMode = true;
     ui.showToast('Выберите карту для обмена');
+    
+    // Add swap-mode class to container
+    document.getElementById('player-cards').classList.add('swap-mode');
     
     // Get only non-used cards
     const allCards = document.querySelectorAll('#player-cards .card');
@@ -296,6 +366,9 @@ class GameManager {
     this.state.swapMode = false;
     this.state.selectedCardIndex = null;
     
+    // Remove swap-mode class from container
+    document.getElementById('player-cards').classList.remove('swap-mode');
+    
     const cards = document.querySelectorAll('#player-cards .card');
     cards.forEach(card => {
       card.classList.remove('swap-candidate', 'selected', 'swap-adjacent');
@@ -321,6 +394,8 @@ class GameManager {
     
     // Render cards - all are remaining so no used cards
     ui.renderPlayerCards(this.state.sequence, 0);
+    // Update battle card to show new current card
+    ui.updatePlayerBattleCard(this.state.sequence[0]);
     ui.updateSwaps(this.state.swapsRemaining);
     ui.updateSwapButtonState(this.state.swapsRemaining);
     ui.setActionsEnabled(false);
@@ -346,6 +421,8 @@ class GameManager {
    * Handle opponent swapped
    */
   onOpponentSwapped() {
+    this.state.opponentSwapsRemaining--;
+    ui.updateSwaps(this.state.swapsRemaining, this.state.opponentSwapsRemaining);
     ui.showToast('Соперник сделал свап');
   }
 
@@ -357,7 +434,11 @@ class GameManager {
     this.state.playerScore = data.yourScore;
     this.state.opponentScore = data.opponentScore;
     this.state.swapsRemaining = data.yourSwapsRemaining;
+    this.state.opponentSwapsRemaining = data.opponentSwapsRemaining;
     this.state.sequence = data.upcomingCards;
+    
+    // Update swap displays for both players
+    ui.updateSwaps(this.state.swapsRemaining, this.state.opponentSwapsRemaining);
     
     // Track played cards
     ui.addOpponentPlayedCard(data.opponentCard);
@@ -390,7 +471,7 @@ class GameManager {
       type = 'lose';
     }
     
-    ui.showRoundResult(title, data.explanation, type);
+    ui.showRoundResult(title, data.explanation, type, data.yourCard, data.opponentCard, this.state.playerName, this.state.opponentName);
   }
 
   /**
@@ -442,8 +523,13 @@ class GameManager {
     this.state.playerScore = data.yourScore;
     this.state.opponentScore = data.opponentScore;
     this.state.swapsRemaining = data.yourSwapsRemaining;
+    this.state.opponentSwapsRemaining = data.opponentSwapsRemaining;
     this.state.opponentName = data.opponentName || this.state.opponentName;
     this.state.playerName = data.playerName || this.state.playerName;
+    this.state.lobbyId = data.lobbyId || this.state.lobbyId;
+    
+    // Show room ID
+    ui.showRoomId(this.state.lobbyId);
     
     // Restore played cards from history
     ui.clearOpponentPlayedCards();
@@ -476,7 +562,7 @@ class GameManager {
       ui.updateScores(data.yourScore, data.opponentScore);
       ui.renderPlayerCards(this.state.sequence, 0, true);
       ui.renderOpponentCards(6, data.currentRound);
-      ui.updateSwaps(this.state.swapsRemaining);
+      ui.updateSwaps(this.state.swapsRemaining, this.state.opponentSwapsRemaining);
       ui.setActionsEnabled(this.state.swapsRemaining > 0 && data.phase === 'swap');
       ui.showScreen('game');
     }
@@ -490,12 +576,15 @@ class GameManager {
   onError(data) {
     ui.showToast(data.message);
     
-    // If reconnection failed, clear session and show lobby
+    // If reconnection failed or lobby invalid, clear session and show lobby
     if (data.message === 'Invalid reconnection attempt' || 
         data.message === 'Lobby no longer exists' ||
-        data.message === 'Player not found') {
+        data.message === 'Player not found' ||
+        data.message === 'Lobby is full' ||
+        data.message === 'Lobby not found') {
       socketHandler.clearSession();
       ui.clearRoomFromUrl();
+      ui.showRoomId(null);
       ui.showScreen('lobby');
     }
   }
@@ -541,7 +630,36 @@ class GameManager {
           ui.showToast(`Комната ${roomCode} - введите имя для подключения`);
         }
       }, 500);
+    } else {
+      // Check if there's a saved session - if so, copy the room to URL
+      const savedSession = localStorage.getItem('gameSession');
+      if (savedSession) {
+        try {
+          const { lobbyId } = JSON.parse(savedSession);
+          if (lobbyId) {
+            ui.updateUrlWithRoom(lobbyId);
+          }
+        } catch (e) {
+          // Ignore
+        }
+      }
     }
+  }
+
+  /**
+   * Leave the current lobby
+   */
+  leaveLobby() {
+    socketHandler.socket.emit('leaveLobby');
+    socketHandler.clearSession();
+    ui.clearRoomFromUrl();
+    ui.showRoomId(null);
+    ui.hideWaiting();
+    ui.hideDisconnectOverlay();
+    this.state.lobbyId = null;
+    this.state.playerId = null;
+    this.state.phase = 'lobby';
+    ui.showScreen('lobby');
   }
 
   /**
