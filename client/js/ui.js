@@ -509,25 +509,52 @@ class UIManager {
   renderPlayerCards(cards, currentRound = 0, showPlayed = true) {
     this.elements.playerCards.innerHTML = '';
     
+    // Calculate the actual current round number (1-based for display)
+    const playedCount = showPlayed ? this.playerPlayedCards.length : 0;
+    
     // First render played cards if showPlayed is true
     if (showPlayed && this.playerPlayedCards.length > 0) {
       this.playerPlayedCards.forEach((card, index) => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'card-wrapper';
+        
         const cardEl = this.createCardElement(card, { simple: true });
         cardEl.classList.add('used');
         cardEl.dataset.index = index;
-        this.elements.playerCards.appendChild(cardEl);
+        
+        const label = document.createElement('span');
+        label.className = 'round-label';
+        label.textContent = `Раунд ${index + 1}`;
+        
+        wrapper.appendChild(cardEl);
+        wrapper.appendChild(label);
+        this.elements.playerCards.appendChild(wrapper);
       });
     }
     
     // Then render remaining cards
     const startIndex = showPlayed ? this.playerPlayedCards.length : 0;
     cards.forEach((card, index) => {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'card-wrapper';
+      
       const cardEl = this.createCardElement(card, { simple: true });
       if (index === 0 && showPlayed) {
         cardEl.classList.add('current');
       }
       cardEl.dataset.index = startIndex + index;
-      this.elements.playerCards.appendChild(cardEl);
+      
+      const label = document.createElement('span');
+      label.className = 'round-label';
+      // Current round is the first remaining card
+      if (index === 0 && showPlayed) {
+        label.classList.add('current');
+      }
+      label.textContent = `Раунд ${startIndex + index + 1}`;
+      
+      wrapper.appendChild(cardEl);
+      wrapper.appendChild(label);
+      this.elements.playerCards.appendChild(wrapper);
     });
   }
 

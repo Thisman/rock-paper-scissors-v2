@@ -866,6 +866,10 @@ input[type="text"]::placeholder {
   margin: var(--spacing-lg) 0;
 }
 
+.overlay-content .btn {
+  margin-top: var(--spacing-lg);
+}
+
 /* Toast */
 .toast {
   position: fixed;

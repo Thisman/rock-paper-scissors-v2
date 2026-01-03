@@ -10,15 +10,9 @@
   perspective: 1000px;
 }
 
-/* Hover effect only for swappable cards on game screen */
-#game-screen #player-cards .card:not(.card-back):not(.disabled):not(.used):hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-lg);
-}
-
-/* Remove default hover effect for cards elsewhere */
+/* No hover effect for cards */
 .card:hover:not(.card-back):not(.disabled) {
-  /* No hover effect by default */
+  /* No hover effect */
 }
 
 .card.selected {
@@ -294,10 +288,6 @@
   cursor: pointer;
 }
 
-.card.swap-adjacent:hover {
-  transform: translateY(-8px);
-}
-
 /* Cards not available for swap should not react to hover */
 .card.used,
 .card.swap-unavailable {
@@ -313,7 +303,33 @@
   pointer-events: none;
 }
 
-#player-cards.swap-mode .card:not(.swap-candidate):not(.swap-adjacent):not(.selected):hover {
-  transform: none;
+#player-cards.swap-mode .card-wrapper {
+  pointer-events: none;
+}
+
+#player-cards.swap-mode .card.swap-candidate,
+#player-cards.swap-mode .card.swap-adjacent,
+#player-cards.swap-mode .card.selected {
+  pointer-events: auto;
+}
+
+/* Card wrapper with round label */
+.card-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.card-wrapper .round-label {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.card-wrapper .round-label.current {
+  color: var(--accent-primary);
+  font-weight: 800;
 }
 

@@ -618,12 +618,39 @@ class GameManager {
       ui.createSequenceSlots(6);
       if (data.hand) {
         this.state.hand = data.hand;
-        ui.renderHandCards(data.hand);
-        dragDrop.init(data.hand, (sequence) => this.onSequenceChange(sequence));
       }
-      if (data.sequenceSet) {
+      
+      if (data.sequenceSet && data.yourSequence && data.yourSequence.length === 6) {
+        // Player already set their sequence - restore it and show waiting state
+        this.state.sequence = data.yourSequence;
+        
+        // Fill the slots with the saved sequence
+        const slots = document.querySelectorAll('.sequence-slot');
+        data.yourSequence.forEach((card, index) => {
+          if (slots[index] && card) {
+            const cardEl = ui.createCardElement(card, { simple: true, draggable: true });
+            slots[index].appendChild(cardEl);
+            slots[index].classList.add('filled');
+          }
+        });
+        
+        // Clear the hand cards area since all cards are placed
+        ui.elements.handCards.innerHTML = '';
+        
+        // Show waiting state
         ui.setConfirmEnabled(false);
         ui.elements.confirmSequenceBtn.textContent = 'Ожидание соперника...';
+        
+        // Initialize dragDrop slots and set sequence to complete
+        dragDrop.sequence = data.yourSequence.map(card => ({ id: card.id, type: card.type }));
+        dragDrop.onSequenceChange = (sequence) => this.onSequenceChange(sequence);
+        dragDrop.setupSlots();
+      } else {
+        // Player hasn't set sequence yet - normal flow
+        if (data.hand) {
+          ui.renderHandCards(data.hand);
+          dragDrop.init(data.hand, (sequence) => this.onSequenceChange(sequence));
+        }
       }
       ui.updateTimer('sequence-timer', data.timeRemaining, 60);
       ui.showScreen('sequence');
