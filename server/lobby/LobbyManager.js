@@ -122,11 +122,16 @@ class LobbyManager {
         }
         
         socket.emit('reconnected', lobby.session.getStateForPlayer(existingPlayer.id));
-        lobby.session.resume();
         
-        // Notify opponent
+        // Only resume if the other player is connected
         if (opponent && !opponent.disconnected) {
+          lobby.session.resume();
           this.io.to(opponent.socketId).emit('opponentReconnected');
+        } else if (opponent && opponent.disconnected) {
+          // Other player is still disconnected - show waiting overlay
+          socket.emit('opponentDisconnected', {
+            reconnectTimeout: this.getRemainingReconnectTime(opponent.id)
+          });
         }
       }
       return;
@@ -349,6 +354,8 @@ class LobbyManager {
       if (otherPlayer && !otherPlayer.disconnected) {
         // Other player wins by forfeit
         lobby.session.endGameByDisconnect(otherPlayer.id);
+        // Cleanup lobby after game ends
+        this.cleanupLobby(lobbyId);
       } else {
         // Other player is also disconnected - mark completed and cleanup
         lobby.session.completed = true;

@@ -35,6 +35,7 @@ class GameSession {
     this.continueReady = new Set(); // Track players who clicked continue
     this.previewReady = new Set(); // Track players who clicked ready in preview
     this.completed = false; // Track if game has ended
+    this.pendingRoundStart = false; // Track if round start is pending after resume
   }
   
   /**
@@ -183,6 +184,13 @@ class GameSession {
   }
 
   /**
+   * Check if any player is disconnected
+   */
+  hasDisconnectedPlayer() {
+    return this.players.some(p => p.disconnected);
+  }
+
+  /**
    * Start a new round
    */
   startRound() {
@@ -191,6 +199,24 @@ class GameSession {
       return;
     }
     
+    // Check if any player is disconnected - if so, mark pending and pause
+    if (this.hasDisconnectedPlayer()) {
+      this.pendingRoundStart = true;
+      // Set phase to a transitional state before pausing
+      this.phase = GamePhase.ROUND_START;
+      this.pause();
+      // Notify connected player about opponent disconnect
+      this.players.forEach(player => {
+        if (!player.disconnected) {
+          this.io.to(player.socketId).emit('opponentDisconnected', {
+            reconnectTimeout: 120 // Will be adjusted by LobbyManager
+          });
+        }
+      });
+      return;
+    }
+    
+    this.pendingRoundStart = false;
     this.phase = GamePhase.ROUND_START;
     
     // Reset round-specific player flags
@@ -500,7 +526,19 @@ class GameSession {
     if (!this.paused || this.phase !== GamePhase.PAUSED) return;
     
     this.phase = this.previousPhase;
+    this.previousPhase = null; // Clear to avoid stale data
     this.paused = false;
+    
+    // Check if we need to start a pending round
+    if (this.pendingRoundStart) {
+      this.broadcast('gameResumed', {
+        phase: this.phase,
+        timeRemaining: 0
+      });
+      // Delay slightly to let client process gameResumed
+      setTimeout(() => this.startRound(), 100);
+      return;
+    }
     
     if (this.timer) {
       this.timer.resume();
@@ -519,8 +557,8 @@ class GameSession {
     const player = this.getPlayer(playerId);
     const opponent = this.getOpponent(playerId);
     
-    // Determine the actual phase (use previousPhase if game was paused)
-    const actualPhase = this.previousPhase || this.phase;
+    // Determine the actual phase (use previousPhase only if currently paused)
+    const actualPhase = this.paused && this.previousPhase ? this.previousPhase : this.phase;
     
     // Determine if player is ready in current phase
     let isReady = player.ready;
