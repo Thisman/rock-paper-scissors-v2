@@ -1,24 +1,27 @@
 const { v4: uuidv4 } = require('uuid');
 const GameSession = require('../game/GameSession');
 const Player = require('../game/Player');
+const ReconnectManager = require('./ReconnectManager');
+const InputValidator = require('../utils/InputValidator');
+const { GAME_CONFIG, GamePhase, LOBBY_ID_CHARS, LOBBY_ID_LENGTH } = require('../game/constants');
 
 class LobbyManager {
   constructor(io) {
     this.io = io;
-    this.lobbies = new Map(); // lobbyId -> { players: [], session: GameSession }
+    this.lobbies = new Map(); // lobbyId -> Lobby
     this.playerToLobby = new Map(); // socketId -> lobbyId
-    this.disconnectedPlayers = new Map(); // playerId -> { lobbyId, timeout }
+    this.reconnectManager = new ReconnectManager();
   }
+
+  // ==================== Lobby Validation ====================
 
   /**
    * Validate lobby state - cleanup if invalid
-   * Returns lobby if valid, null if cleaned up
    */
   validateLobby(lobbyId) {
     const lobby = this.lobbies.get(lobbyId);
     if (!lobby) return null;
     
-    // Check if lobby should be cleaned up
     const shouldCleanup = 
       lobby.players.length === 0 || 
       (lobby.session && lobby.session.isCompleted());
@@ -32,8 +35,7 @@ class LobbyManager {
   }
 
   /**
-   * Get validated lobby and player for socket
-   * Returns { lobby, player } or null if invalid
+   * Get validated lobby and player context for socket
    */
   getValidatedContext(socket) {
     const lobbyId = this.playerToLobby.get(socket.id);
@@ -48,22 +50,23 @@ class LobbyManager {
     return { lobby, player, lobbyId };
   }
 
+  // ==================== Lobby Creation/Joining ====================
+
   /**
    * Create a new lobby
    */
   createLobby(socket, data) {
-    const playerName = typeof data === 'string' ? data : data.playerName;
-    const clientPlayerId = typeof data === 'object' ? data.playerId : null;
+    const { playerName, playerId: clientPlayerId } = InputValidator.createLobbyData(data);
     
     const lobbyId = this.generateLobbyId();
     const playerId = clientPlayerId || uuidv4();
-    const player = new Player(playerId, socket.id, playerName || 'Player 1');
+    const player = new Player(playerId, socket.id, playerName);
     
     this.lobbies.set(lobbyId, {
       players: [player],
       session: null,
       createdAt: Date.now(),
-      allowedPlayerIds: new Set([playerId]) // Track allowed players from start
+      allowedPlayerIds: new Set([playerId])
     });
     
     this.playerToLobby.set(socket.id, lobbyId);
@@ -82,62 +85,83 @@ class LobbyManager {
    * Join an existing lobby
    */
   joinLobby(socket, lobbyId, playerName, clientPlayerId = null) {
-    const lobby = this.validateLobby(lobbyId);
+    // Validate input
+    const validatedData = InputValidator.joinLobbyData(lobbyId, playerName, clientPlayerId);
+    if (!validatedData) {
+      socket.emit('error', { message: 'Invalid lobby ID format' });
+      return;
+    }
     
+    const lobby = this.validateLobby(validatedData.lobbyId);
     if (!lobby) {
       socket.emit('error', { message: 'Lobby not found' });
       return;
     }
     
-    // Check if this player is already in the lobby (rejoin case)
-    const existingPlayer = lobby.players.find(p => p.id === clientPlayerId);
-    if (existingPlayer) {
-      // Player is rejoining - update their socket
-      existingPlayer.socketId = socket.id;
-      existingPlayer.disconnected = false;
-      existingPlayer.disconnectedAt = null;
-      
-      this.playerToLobby.set(socket.id, lobbyId);
-      socket.join(lobbyId);
-      
-      // Get opponent
-      const opponent = lobby.players.find(p => p.id !== clientPlayerId);
-      
-      socket.emit('lobbyJoined', {
-        lobbyId,
-        playerId: existingPlayer.id,
-        playerName: existingPlayer.name,
-        opponentName: opponent ? opponent.name : null
-      });
-      
-      console.log(`${existingPlayer.name} rejoined lobby ${lobbyId}`);
-      
-      // If game is in progress and not completed, send reconnected state
-      if (lobby.session) {
-        // Check if game is completed - don't allow reconnection to completed game
-        if (lobby.session.isCompleted()) {
-          socket.emit('error', { message: 'Game has ended' });
-          this.cleanupLobby(lobbyId);
-          return;
-        }
-        
-        socket.emit('reconnected', lobby.session.getStateForPlayer(existingPlayer.id));
-        
-        // Only resume if the other player is connected
-        if (opponent && !opponent.disconnected) {
-          lobby.session.resume();
-          this.io.to(opponent.socketId).emit('opponentReconnected');
-        } else if (opponent && opponent.disconnected) {
-          // Other player is still disconnected - show waiting overlay
-          socket.emit('opponentDisconnected', {
-            reconnectTimeout: this.getRemainingReconnectTime(opponent.id)
-          });
-        }
-      }
+    // Try to handle as rejoin first
+    if (this.tryRejoinLobby(socket, lobby, validatedData)) {
       return;
     }
     
-    if (lobby.players.length >= 2) {
+    // Handle as new player join
+    this.handleNewPlayerJoin(socket, lobby, validatedData);
+  }
+
+  /**
+   * Try to rejoin lobby as existing player
+   */
+  tryRejoinLobby(socket, lobby, { lobbyId, playerId }) {
+    const existingPlayer = lobby.players.find(p => p.id === playerId);
+    if (!existingPlayer) return false;
+    
+    // Clear any pending reconnect timeout for this player
+    this.reconnectManager.clear(existingPlayer.id);
+    
+    // Update socket connection
+    existingPlayer.markConnected(socket.id);
+    this.playerToLobby.set(socket.id, lobbyId);
+    socket.join(lobbyId);
+    
+    const opponent = lobby.players.find(p => p.id !== playerId);
+    
+    socket.emit('lobbyJoined', {
+      lobbyId,
+      playerId: existingPlayer.id,
+      playerName: existingPlayer.name,
+      opponentName: opponent ? opponent.name : null
+    });
+    
+    console.log(`${existingPlayer.name} rejoined lobby ${lobbyId}`);
+    
+    // Handle active game session
+    if (lobby.session) {
+      if (lobby.session.isCompleted()) {
+        socket.emit('error', { message: 'Game has ended' });
+        this.cleanupLobby(lobbyId);
+        return true;
+      }
+      
+      socket.emit('reconnected', lobby.session.getStateForPlayer(existingPlayer.id));
+      
+      if (opponent && !opponent.disconnected) {
+        lobby.session.resume();
+        this.io.to(opponent.socketId).emit('opponentReconnected');
+      } else if (opponent && opponent.disconnected) {
+        socket.emit('opponentDisconnected', {
+          reconnectTimeout: this.reconnectManager.getRemainingTime(opponent.id)
+        });
+      }
+    }
+    
+    return true;
+  }
+
+  /**
+   * Handle new player joining lobby
+   */
+  handleNewPlayerJoin(socket, lobby, { lobbyId, playerName, playerId: clientPlayerId }) {
+    // Check lobby capacity
+    if (lobby.players.length >= GAME_CONFIG.MAX_PLAYERS) {
       socket.emit('error', { message: 'Lobby is full' });
       return;
     }
@@ -147,30 +171,20 @@ class LobbyManager {
       return;
     }
     
-    // Check if existing player in lobby is still connected
-    if (lobby.players.length === 1) {
-      const existingPlayerSocket = this.io.sockets.sockets.get(lobby.players[0].socketId);
-      if (!existingPlayerSocket || !existingPlayerSocket.connected) {
-        // First player disconnected, remove them
-        const disconnectedPlayer = lobby.players[0];
-        lobby.players = [];
-        this.playerToLobby.delete(disconnectedPlayer.socketId);
-        console.log(`Removed disconnected player ${disconnectedPlayer.name} from lobby ${lobbyId}`);
-      }
-    }
+    // Clean up disconnected first player if needed
+    this.cleanupDisconnectedFirstPlayer(lobby, lobbyId);
     
     const playerId = clientPlayerId || uuidv4();
     
-    // If game is in progress, only allow original players to rejoin
+    // Security: only original players can rejoin in-progress games
     if (lobby.session && lobby.allowedPlayerIds && !lobby.allowedPlayerIds.has(playerId)) {
       socket.emit('error', { message: 'Only original players can rejoin this game' });
       return;
     }
     
-    const player = new Player(playerId, socket.id, playerName || 'Player 2');
+    const player = new Player(playerId, socket.id, playerName);
     lobby.players.push(player);
     
-    // Add this player to allowed players list
     if (lobby.allowedPlayerIds) {
       lobby.allowedPlayerIds.add(playerId);
     }
@@ -178,20 +192,18 @@ class LobbyManager {
     this.playerToLobby.set(socket.id, lobbyId);
     socket.join(lobbyId);
     
-    // Check if there's another player or if we're now alone in the lobby
+    // If we're now alone (first player left)
     if (lobby.players.length === 1) {
-      // We're the only player (the original player disconnected)
-      // Treat this as creating a new lobby
       socket.emit('lobbyCreated', {
         lobbyId,
         playerId,
         playerName: player.name
       });
-      console.log(`${player.name} is now waiting alone in lobby ${lobbyId} (original player left)`);
+      console.log(`${player.name} is now waiting alone in lobby ${lobbyId}`);
       return;
     }
     
-    // There's another player - proceed with game start
+    // Notify both players and start game
     const firstPlayer = lobby.players[0];
     
     socket.emit('lobbyJoined', {
@@ -201,76 +213,97 @@ class LobbyManager {
       opponentName: firstPlayer.name
     });
     
-    // Notify first player that someone joined
     this.io.to(firstPlayer.socketId).emit('playerJoined', {
       opponentName: player.name
     });
     
     console.log(`${player.name} joined lobby ${lobbyId} (${playerId})`);
-    
-    // Start the game since we have 2 players
     this.startGame(lobbyId);
   }
+
+  /**
+   * Clean up disconnected first player from lobby
+   */
+  cleanupDisconnectedFirstPlayer(lobby, lobbyId) {
+    if (lobby.players.length !== 1) return;
+    
+    const existingPlayerSocket = this.io.sockets.sockets.get(lobby.players[0].socketId);
+    if (!existingPlayerSocket || !existingPlayerSocket.connected) {
+      const disconnectedPlayer = lobby.players[0];
+      lobby.players = [];
+      this.playerToLobby.delete(disconnectedPlayer.socketId);
+      console.log(`Removed disconnected player ${disconnectedPlayer.name} from lobby ${lobbyId}`);
+    }
+  }
+
+  // ==================== Game Management ====================
 
   /**
    * Start a new game session
    */
   startGame(lobbyId) {
     const lobby = this.lobbies.get(lobbyId);
-    if (!lobby || lobby.players.length !== 2) return;
+    if (!lobby || lobby.players.length !== GAME_CONFIG.MAX_PLAYERS) return;
     
-    // Check if all players are connected before starting
-    const allConnected = lobby.players.every(player => {
-      const socket = this.io.sockets.sockets.get(player.socketId);
-      return socket && socket.connected;
-    });
+    // Verify all players are connected
+    const disconnectedPlayers = this.findDisconnectedPlayers(lobby);
     
-    if (!allConnected) {
-      // Remove disconnected players
-      const disconnectedPlayers = lobby.players.filter(player => {
-        const socket = this.io.sockets.sockets.get(player.socketId);
-        return !socket || !socket.connected;
-      });
-      
-      disconnectedPlayers.forEach(player => {
-        lobby.players = lobby.players.filter(p => p.id !== player.id);
-        this.playerToLobby.delete(player.socketId);
-        console.log(`Removed disconnected player ${player.name} from lobby ${lobbyId} before game start`);
-      });
-      
-      // Notify remaining player that they're waiting
-      if (lobby.players.length === 1) {
-        const remainingPlayer = lobby.players[0];
-        this.io.to(remainingPlayer.socketId).emit('opponentLeft', {
-          message: 'Соперник отключился до начала игры'
-        });
-      }
-      
-      // Don't start the game
+    if (disconnectedPlayers.length > 0) {
+      this.removeDisconnectedPlayers(lobby, lobbyId, disconnectedPlayers);
       return;
     }
     
     const session = new GameSession(lobby.players, this.io, lobbyId);
     lobby.session = session;
-    
     session.start();
     
     console.log(`Game started in lobby ${lobbyId}`);
   }
 
   /**
-   * Handle player setting their card sequence
+   * Find disconnected players in lobby
    */
+  findDisconnectedPlayers(lobby) {
+    return lobby.players.filter(player => {
+      const socket = this.io.sockets.sockets.get(player.socketId);
+      return !socket || !socket.connected;
+    });
+  }
+
+  /**
+   * Remove disconnected players from lobby
+   */
+  removeDisconnectedPlayers(lobby, lobbyId, disconnectedPlayers) {
+    disconnectedPlayers.forEach(player => {
+      lobby.players = lobby.players.filter(p => p.id !== player.id);
+      this.playerToLobby.delete(player.socketId);
+      console.log(`Removed disconnected player ${player.name} from lobby ${lobbyId} before game start`);
+    });
+    
+    if (lobby.players.length === 1) {
+      const remainingPlayer = lobby.players[0];
+      this.io.to(remainingPlayer.socketId).emit('opponentLeft', {
+        message: 'Соперник отключился до начала игры'
+      });
+    }
+  }
+
+  // ==================== Game Event Handlers ====================
+
   handleSetSequence(socket, sequence) {
     const ctx = this.getValidatedContext(socket);
     if (!ctx || !ctx.lobby.session) return;
     
-    ctx.lobby.session.setPlayerSequence(ctx.player.id, sequence);
+    // Validate sequence before passing to game session
+    const validSequence = InputValidator.sequence(sequence, ctx.player.hand);
+    if (!validSequence) {
+      socket.emit('error', { message: 'Invalid card sequence' });
+      return;
+    }
+    
+    ctx.lobby.session.setPlayerSequence(ctx.player.id, validSequence);
   }
 
-  /**
-   * Handle preview ready action
-   */
   handlePreviewReady(socket) {
     const ctx = this.getValidatedContext(socket);
     if (!ctx || !ctx.lobby.session) return;
@@ -278,19 +311,25 @@ class LobbyManager {
     ctx.lobby.session.handlePreviewReady(ctx.player.id);
   }
 
-  /**
-   * Handle card swap action
-   */
   handleSwapCards(socket, positions) {
     const ctx = this.getValidatedContext(socket);
     if (!ctx || !ctx.lobby.session) return;
     
-    ctx.lobby.session.handleSwap(ctx.player.id, positions);
+    // Validate swap positions
+    const validPositions = InputValidator.swapPositions(
+      positions,
+      ctx.lobby.session.currentRound,
+      GAME_CONFIG.CARDS_PER_PLAYER
+    );
+    
+    if (!validPositions) {
+      socket.emit('swapError', { message: 'Invalid swap positions' });
+      return;
+    }
+    
+    ctx.lobby.session.handleSwap(ctx.player.id, validPositions);
   }
 
-  /**
-   * Handle skip swap action
-   */
   handleSkipSwap(socket) {
     const ctx = this.getValidatedContext(socket);
     if (!ctx || !ctx.lobby.session) return;
@@ -298,9 +337,6 @@ class LobbyManager {
     ctx.lobby.session.handleSkipSwap(ctx.player.id);
   }
 
-  /**
-   * Handle continue round action
-   */
   handleContinueRound(socket) {
     const ctx = this.getValidatedContext(socket);
     if (!ctx || !ctx.lobby.session) return;
@@ -308,8 +344,10 @@ class LobbyManager {
     ctx.lobby.session.handleContinue(ctx.player.id);
   }
 
+  // ==================== Leave/Disconnect ====================
+
   /**
-   * Handle player leaving lobby voluntarily (permanent - like disconnect timeout)
+   * Handle player leaving lobby voluntarily
    */
   handleLeaveLobby(socket) {
     const lobbyId = this.playerToLobby.get(socket.id);
@@ -327,60 +365,55 @@ class LobbyManager {
       return;
     }
     
-    // Clear any disconnect timeout for this player
-    const disconnectInfo = this.disconnectedPlayers.get(player.id);
-    if (disconnectInfo) {
-      clearTimeout(disconnectInfo.timeout);
-      this.disconnectedPlayers.delete(player.id);
-    }
-    
-    // Remove player from lobby first
+    this.reconnectManager.clear(player.id);
+    this.removePlayerFromLobby(lobby, lobbyId, player, socket);
+  }
+
+  /**
+   * Remove player from lobby and handle consequences
+   */
+  removePlayerFromLobby(lobby, lobbyId, player, socket) {
     lobby.players = lobby.players.filter(p => p.id !== player.id);
     this.playerToLobby.delete(socket.id);
     socket.leave(lobbyId);
     
     console.log(`Player ${player.name} left lobby ${lobbyId}`);
     
-    // If lobby is now empty, cleanup immediately
     if (lobby.players.length === 0) {
       this.cleanupLobby(lobbyId);
       return;
     }
     
-    // If game is in progress, handle it
     if (lobby.session && !lobby.session.isCompleted()) {
-      const otherPlayer = lobby.players[0]; // Only one player left
-      
-      if (otherPlayer && !otherPlayer.disconnected) {
-        // Other player wins by forfeit
-        lobby.session.endGameByDisconnect(otherPlayer.id);
-        // Cleanup lobby after game ends
-        this.cleanupLobby(lobbyId);
-      } else {
-        // Other player is also disconnected - mark completed and cleanup
-        lobby.session.completed = true;
-        if (lobby.session.timer) {
-          lobby.session.timer.clear();
-        }
-        // Clear the other player's disconnect timeout and cleanup
-        const otherDisconnectInfo = this.disconnectedPlayers.get(otherPlayer.id);
-        if (otherDisconnectInfo) {
-          clearTimeout(otherDisconnectInfo.timeout);
-          this.disconnectedPlayers.delete(otherPlayer.id);
-        }
-        this.cleanupLobby(lobbyId);
-      }
+      this.handlePlayerLeftDuringGame(lobby, lobbyId, player);
     } else if (!lobby.session) {
-      // Game hasn't started yet - just cleanup the lobby
       this.cleanupLobby(lobbyId);
     }
   }
 
   /**
-   * Handle player clicking "Play Again" - clears their session
+   * Handle player leaving during active game
    */
+  handlePlayerLeftDuringGame(lobby, lobbyId, leavingPlayer) {
+    const otherPlayer = lobby.players[0];
+    
+    if (otherPlayer && !otherPlayer.disconnected) {
+      lobby.session.endGameByDisconnect(otherPlayer.id);
+      this.cleanupLobby(lobbyId);
+    } else {
+      lobby.session.completed = true;
+      if (lobby.session.timer) {
+        lobby.session.timer.clear();
+      }
+      
+      if (otherPlayer) {
+        this.reconnectManager.clear(otherPlayer.id);
+      }
+      this.cleanupLobby(lobbyId);
+    }
+  }
+
   handlePlayAgain(socket) {
-    // Use the same logic as handleLeaveLobby
     this.handleLeaveLobby(socket);
   }
 
@@ -403,184 +436,162 @@ class LobbyManager {
       return;
     }
     
-    // If game hasn't started yet, just clean up the lobby
+    // Game not started - just remove player
     if (!lobby.session) {
-      // Remove player from lobby
-      lobby.players = lobby.players.filter(p => p.id !== player.id);
-      this.playerToLobby.delete(socket.id);
-      
-      // If lobby is now empty, delete it
-      if (lobby.players.length === 0) {
-        this.cleanupLobby(lobbyId);
-      }
-      
-      console.log(`Player ${player.name} left lobby ${lobbyId} (game not started)`);
+      this.handleDisconnectBeforeGame(lobby, lobbyId, player, socket);
       return;
     }
     
-    // Get the current game phase
-    const currentPhase = lobby.session.previousPhase || lobby.session.phase;
-    
-    // During reveal phase (showing round results), don't pause - just continue
-    // The game will proceed to next round automatically
-    if (currentPhase === 'reveal') {
-      console.log(`Player ${player.name} disconnected during reveal phase - not pausing`);
-      
-      // Mark player as disconnected but don't pause
-      player.disconnected = true;
-      player.disconnectedAt = Date.now();
-      this.playerToLobby.delete(socket.id);
-      
-      // Set up reconnection timeout
-      const timeout = setTimeout(() => {
-        this.handleReconnectTimeout(player.id, lobbyId);
-      }, 120000);
-      this.disconnectedPlayers.set(player.id, { lobbyId, timeout, disconnectedAt: player.disconnectedAt });
-      
-      // Don't notify other player - game continues normally
-      return;
-    }
-    
-    // Set up reconnection timeout (120 seconds)
-    const disconnectedAt = Date.now();
-    const timeout = setTimeout(() => {
-      this.handleReconnectTimeout(player.id, lobbyId);
-    }, 120000);
-    
-    this.disconnectedPlayers.set(player.id, { lobbyId, timeout, disconnectedAt });
-    player.disconnected = true;
-    player.disconnectedAt = disconnectedAt;
-    
-    // Pause the game if in progress
-    lobby.session.pause();
-    
-    // Notify other player after a 2 second delay (to allow quick reconnects)
-    const otherPlayer = lobby.players.find(p => p.id !== player.id);
-    if (otherPlayer && !otherPlayer.disconnected) {
-      const notifyTimeout = setTimeout(() => {
-        // Check if player is still disconnected after 2 seconds
-        if (player.disconnected) {
-          this.io.to(otherPlayer.socketId).emit('opponentDisconnected', {
-            reconnectTimeout: Math.max(0, 120 - 2) // Subtract the 2 second delay
-          });
-        }
-      }, 2000);
-      
-      // Store the notify timeout so we can cancel it on reconnect
-      const disconnectInfo = this.disconnectedPlayers.get(player.id);
-      if (disconnectInfo) {
-        disconnectInfo.notifyTimeout = notifyTimeout;
-      }
-    }
-    
+    // Handle disconnect during game
+    this.handleDisconnectDuringGame(lobby, lobbyId, player, socket);
+  }
+
+  /**
+   * Handle disconnect before game started
+   */
+  handleDisconnectBeforeGame(lobby, lobbyId, player, socket) {
+    lobby.players = lobby.players.filter(p => p.id !== player.id);
     this.playerToLobby.delete(socket.id);
+    
+    if (lobby.players.length === 0) {
+      this.cleanupLobby(lobbyId);
+    }
+    
+    console.log(`Player ${player.name} left lobby ${lobbyId} (game not started)`);
+  }
+
+  /**
+   * Handle disconnect during active game
+   */
+  handleDisconnectDuringGame(lobby, lobbyId, player, socket) {
+    const currentPhase = lobby.session.stateMachine.getActualPhase();
+    
+    // During reveal phase - don't pause, game continues
+    if (currentPhase === GamePhase.REVEAL) {
+      this.handleDisconnectDuringReveal(lobby, lobbyId, player, socket);
+      return;
+    }
+    
+    // Standard disconnect handling
+    this.handleStandardDisconnect(lobby, lobbyId, player, socket);
+  }
+
+  /**
+   * Handle disconnect during reveal phase (no pause)
+   */
+  handleDisconnectDuringReveal(lobby, lobbyId, player, socket) {
+    console.log(`Player ${player.name} disconnected during reveal phase - not pausing`);
+    
+    player.markDisconnected();
+    this.playerToLobby.delete(socket.id);
+    
+    this.reconnectManager.trackSilent(
+      player.id,
+      lobbyId,
+      (playerId) => this.handleReconnectTimeout(playerId, lobbyId)
+    );
+  }
+
+  /**
+   * Handle standard disconnect (with pause)
+   */
+  handleStandardDisconnect(lobby, lobbyId, player, socket) {
+    player.markDisconnected();
+    this.playerToLobby.delete(socket.id);
+    
+    const otherPlayer = lobby.players.find(p => p.id !== player.id);
+    
+    this.reconnectManager.track(
+      player.id,
+      lobbyId,
+      (playerId) => this.handleReconnectTimeout(playerId, lobbyId),
+      otherPlayer && !otherPlayer.disconnected
+        ? (remaining) => this.io.to(otherPlayer.socketId).emit('opponentDisconnected', { reconnectTimeout: remaining })
+        : null
+    );
+    
+    lobby.session.pause();
     
     console.log(`Player ${player.name} disconnected from lobby ${lobbyId}`);
     
-    // Check if both players are now disconnected - cleanup immediately
-    const allDisconnected = lobby.players.every(p => p.disconnected);
-    if (allDisconnected) {
+    // Both players disconnected - cleanup
+    if (lobby.players.every(p => p.disconnected)) {
       console.log(`Both players disconnected in lobby ${lobbyId}, cleaning up`);
-      // Mark session as completed
       lobby.session.completed = true;
-      if (lobby.session.timer) {
-        lobby.session.timer.clear();
-      }
+      lobby.session.clearTimer();
       this.cleanupLobby(lobbyId);
     }
   }
+
+  // ==================== Reconnection ====================
 
   /**
    * Handle player reconnection
    */
   handleReconnect(socket, lobbyId, playerId) {
-    const disconnectInfo = this.disconnectedPlayers.get(playerId);
-    if (!disconnectInfo || disconnectInfo.lobbyId !== lobbyId) {
+    // Validate inputs
+    const validLobbyId = InputValidator.lobbyId(lobbyId);
+    const validPlayerId = InputValidator.playerId(playerId);
+    
+    if (!validLobbyId || !validPlayerId) {
+      socket.emit('error', { message: 'Invalid reconnection data' });
+      return;
+    }
+    
+    if (!this.reconnectManager.isValidReconnect(validPlayerId, validLobbyId)) {
       socket.emit('error', { message: 'Invalid reconnection attempt' });
       return;
     }
     
-    const lobby = this.validateLobby(lobbyId);
+    const lobby = this.validateLobby(validLobbyId);
     if (!lobby) {
       socket.emit('error', { message: 'Lobby no longer exists' });
-      clearTimeout(disconnectInfo.timeout);
-      this.disconnectedPlayers.delete(playerId);
+      this.reconnectManager.clear(validPlayerId);
       return;
     }
     
-    const player = lobby.players.find(p => p.id === playerId);
+    const player = lobby.players.find(p => p.id === validPlayerId);
     if (!player) {
       socket.emit('error', { message: 'Player not found' });
-      clearTimeout(disconnectInfo.timeout);
-      this.disconnectedPlayers.delete(playerId);
+      this.reconnectManager.clear(validPlayerId);
       return;
     }
     
-    // Check if other player is still in the lobby
-    const otherPlayer = lobby.players.find(p => p.id !== playerId);
+    const otherPlayer = lobby.players.find(p => p.id !== validPlayerId);
     if (!otherPlayer) {
-      // Other player left completely, end the session
       socket.emit('error', { message: 'Opponent left the game' });
-      clearTimeout(disconnectInfo.timeout);
-      this.disconnectedPlayers.delete(playerId);
-      this.cleanupLobby(lobbyId);
+      this.reconnectManager.clear(validPlayerId);
+      this.cleanupLobby(validLobbyId);
       return;
     }
     
-    // Check if other player is also disconnected
-    if (otherPlayer.disconnected) {
-      // Check if their socket is actually gone
-      const otherSocket = this.io.sockets.sockets.get(otherPlayer.socketId);
-      if (!otherSocket || !otherSocket.connected) {
-        // Both players were disconnected, the other hasn't reconnected
-        // We reconnect, but the game is still paused waiting for the other
-        console.log(`Player ${player.name} reconnected, but opponent ${otherPlayer.name} is still disconnected`);
-      }
-    }
+    this.completeReconnection(socket, lobby, validLobbyId, player, otherPlayer);
+  }
+
+  /**
+   * Complete the reconnection process
+   */
+  completeReconnection(socket, lobby, lobbyId, player, otherPlayer) {
+    this.reconnectManager.clear(player.id);
     
-    // Clear the timeouts
-    clearTimeout(disconnectInfo.timeout);
-    if (disconnectInfo.notifyTimeout) {
-      clearTimeout(disconnectInfo.notifyTimeout);
-    }
-    this.disconnectedPlayers.delete(playerId);
-    
-    // Update player socket
-    player.socketId = socket.id;
-    player.disconnected = false;
-    player.disconnectedAt = null;
-    
+    player.markConnected(socket.id);
     this.playerToLobby.set(socket.id, lobbyId);
     socket.join(lobbyId);
     
-    // Send current game state
     if (lobby.session) {
-      socket.emit('reconnected', lobby.session.getStateForPlayer(playerId));
+      socket.emit('reconnected', lobby.session.getStateForPlayer(player.id));
       
-      // Only resume if the other player is connected
       if (!otherPlayer.disconnected) {
         lobby.session.resume();
         this.io.to(otherPlayer.socketId).emit('opponentReconnected');
       } else {
-        // Show disconnect overlay to the reconnecting player
         socket.emit('opponentDisconnected', {
-          reconnectTimeout: this.getRemainingReconnectTime(otherPlayer.id)
+          reconnectTimeout: this.reconnectManager.getRemainingTime(otherPlayer.id)
         });
       }
     }
     
     console.log(`Player ${player.name} reconnected to lobby ${lobbyId}`);
-  }
-
-  /**
-   * Get remaining reconnect time for a disconnected player
-   */
-  getRemainingReconnectTime(playerId) {
-    const info = this.disconnectedPlayers.get(playerId);
-    if (!info || !info.disconnectedAt) return 120;
-    
-    const elapsed = Math.floor((Date.now() - info.disconnectedAt) / 1000);
-    return Math.max(0, 120 - elapsed);
   }
 
   /**
@@ -593,7 +604,6 @@ class LobbyManager {
     const player = lobby.players.find(p => p.id === playerId);
     if (!player) return;
     
-    // End the game with the other player as winner
     if (lobby.session) {
       const otherPlayer = lobby.players.find(p => p.id !== playerId);
       if (otherPlayer) {
@@ -601,57 +611,51 @@ class LobbyManager {
       }
     }
     
-    this.disconnectedPlayers.delete(playerId);
+    this.reconnectManager.clear(playerId);
     this.cleanupLobby(lobbyId);
     
     console.log(`Player ${player.name} reconnection timeout in lobby ${lobbyId}`);
   }
 
+  // ==================== Cleanup ====================
+
   /**
-   * Clean up a lobby after game ends
+   * Clean up a lobby
    */
   cleanupLobby(lobbyId) {
     const lobby = this.lobbies.get(lobbyId);
     if (!lobby) return;
     
-    // Clear timers in session
-    if (lobby.session && lobby.session.timer) {
-      lobby.session.timer.clear();
+    if (lobby.session) {
+      lobby.session.clearTimer();
     }
     
-    // Remove player socket mappings and clear disconnect timeouts
     lobby.players.forEach(player => {
       this.playerToLobby.delete(player.socketId);
-      const disconnectInfo = this.disconnectedPlayers.get(player.id);
-      if (disconnectInfo) {
-        clearTimeout(disconnectInfo.timeout);
-        if (disconnectInfo.notifyTimeout) {
-          clearTimeout(disconnectInfo.notifyTimeout);
-        }
-        this.disconnectedPlayers.delete(player.id);
-      }
+      this.reconnectManager.clear(player.id);
     });
     
     this.lobbies.delete(lobbyId);
     console.log(`Lobby ${lobbyId} cleaned up`);
   }
 
+  // ==================== Utilities ====================
+
   /**
    * Generate a short, memorable lobby ID
    */
   generateLobbyId() {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let result = '';
-    for (let i = 0; i < 6; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    for (let i = 0; i < LOBBY_ID_LENGTH; i++) {
+      result += LOBBY_ID_CHARS.charAt(Math.floor(Math.random() * LOBBY_ID_CHARS.length));
     }
-    // Ensure uniqueness
+    
     if (this.lobbies.has(result)) {
       return this.generateLobbyId();
     }
+    
     return result;
   }
 }
 
 module.exports = LobbyManager;
-

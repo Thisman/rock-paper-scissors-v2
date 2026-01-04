@@ -1,3 +1,5 @@
+const { GAME_CONFIG } = require('./constants');
+
 class Player {
   constructor(id, socketId, name) {
     this.id = id;
@@ -16,6 +18,8 @@ class Player {
 
   /**
    * Set the player's card sequence
+   * @param {Array} sequence - Validated sequence from InputValidator
+   * @returns {boolean} True if sequence was set successfully
    */
   setSequence(sequence) {
     if (this.sequenceSet) return false;
@@ -40,12 +44,30 @@ class Player {
   }
 
   /**
+   * Check if player can perform a swap
+   * @returns {boolean} True if player can swap
+   */
+  canSwap() {
+    return this.swapsUsed < GAME_CONFIG.MAX_SWAPS_PER_GAME && !this.swappedThisRound;
+  }
+
+  /**
+   * Get number of swaps remaining
+   * @returns {number} Number of swaps remaining
+   */
+  getSwapsRemaining() {
+    return GAME_CONFIG.MAX_SWAPS_PER_GAME - this.swapsUsed;
+  }
+
+  /**
    * Perform a swap of adjacent cards
+   * @param {number} pos1 - First position
+   * @param {number} pos2 - Second position
+   * @returns {boolean} True if swap was successful
    */
   swapCards(pos1, pos2) {
     // Check if swap is valid
-    if (this.swapsUsed >= 3) return false;
-    if (this.swappedThisRound) return false;
+    if (!this.canSwap()) return false;
     if (Math.abs(pos1 - pos2) !== 1) return false;
     if (pos1 < 0 || pos2 < 0 || pos1 >= this.sequence.length || pos2 >= this.sequence.length) {
       return false;
@@ -71,6 +93,7 @@ class Player {
 
   /**
    * Add points to player's score
+   * @param {number} points - Points to add
    */
   addScore(points) {
     this.score += points;
@@ -78,13 +101,34 @@ class Player {
 
   /**
    * Get current card for a round
+   * @param {number} roundIndex - Round index (0-based)
+   * @returns {Object|null} Card object or null
    */
   getCardForRound(roundIndex) {
     return this.sequence[roundIndex] || null;
   }
 
   /**
+   * Mark player as disconnected
+   */
+  markDisconnected() {
+    this.disconnected = true;
+    this.disconnectedAt = Date.now();
+  }
+
+  /**
+   * Mark player as connected
+   * @param {string} socketId - New socket ID
+   */
+  markConnected(socketId) {
+    this.socketId = socketId;
+    this.disconnected = false;
+    this.disconnectedAt = null;
+  }
+
+  /**
    * Get state that can be shared with this player
+   * @returns {Object} Player state
    */
   getState() {
     return {
@@ -92,11 +136,10 @@ class Player {
       name: this.name,
       score: this.score,
       swapsUsed: this.swapsUsed,
-      swapsRemaining: 3 - this.swapsUsed,
+      swapsRemaining: this.getSwapsRemaining(),
       sequenceSet: this.sequenceSet
     };
   }
 }
 
 module.exports = Player;
-
